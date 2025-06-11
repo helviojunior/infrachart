@@ -4,7 +4,7 @@ import (
     "fmt"
     "net"
     "os"
-    //"strings"
+    "strings"
 
     "github.com/helviojunior/infrachart/internal/tools"
     "github.com/helviojunior/infrachart/pkg/log"
@@ -19,8 +19,34 @@ import (
 
     netcalc "github.com/helviojunior/pcapraptor/pkg/netcalc"
 
+    "database/sql"
     "gorm.io/gorm/clause"
 )
+
+var topTCPPorts = []uint{
+    21, 22, 23, 25, 53, 80, 110, 111, 135, 139,
+    143, 443, 445, 993, 995, 1025, 1433, 1723, 3306, 3389,
+    5900, 8080, 8443, 8888, 20, 26, 49, 69, 161, 389,
+    636, 873, 989, 990, 992, 993, 995, 1080, 1194, 1434,
+    1521, 2049, 2121, 3300, 3388, 4444, 4662, 5000, 5060, 5432,
+    5631, 5666, 5800, 5901, 6000, 6001, 6002, 6646, 6666, 6697,
+    8000, 8008, 8081, 8181, 8222, 8444, 8880, 8881, 8882, 8883,
+    9000, 9090, 9100, 9200, 9300, 9418, 9999, 10000, 10001, 10010,
+    10243, 11371, 12000, 12345, 13720, 13721, 14550, 15000, 16080, 18080,
+    20000, 24800, 27017, 28017, 31337, 32768, 32769, 49152, 49153, 49154,
+    10443, 5443,
+}
+
+func IsTopPort(port uint) bool {
+
+    for _, p := range topTCPPorts {
+        if p == port {
+            return true
+        }
+    }
+
+    return false
+} 
 
 type Cert struct {
     ID string
@@ -98,11 +124,12 @@ func (r *DataReader) AddDatabase(filePath string) error {
 
 func (r *DataReader) GenerateDotFile(dotFilePath string) {
     //
-    certificates := r.GetCertificates()
+    //certificates := r.GetCertificates()
 
+    /*
     for _, c := range certificates {
         log.Debug("Cert 2", "c", c)
-    }
+    }*/
 
     subnetList := []netcalc.SubnetData{}
     hostList := []*HostEntry{}
@@ -112,7 +139,20 @@ func (r *DataReader) GenerateDotFile(dotFilePath string) {
         if err == nil {
             defer database.CloseDB(conn)
 
-            rHosts, err := conn.Model(&certcrawler_models.Host{}).Preload(clause.Associations).Rows()
+            var rHosts *sql.Rows
+
+            if len(r.options.FilterList) > 0 {
+                var ids = []int{}
+                sqlHosts := r.prepareSQL([]string{"h.ptr", "cn.name"})
+
+                if err := conn.Raw("SELECT distinct h.id from hosts_certs as hc inner join cert_names as cn on cn.certificate_id = hc.certificate_id inner join hosts as h on h.id = hc.host_id WHERE cn.name != '' " + sqlHosts).Find(&ids).Error; err == nil {
+                
+                    rHosts, err = conn.Model(&certcrawler_models.Host{}).Preload(clause.Associations).Where("id in ?", ids).Rows()
+                }
+            }else{
+                rHosts, err = conn.Model(&certcrawler_models.Host{}).Preload(clause.Associations).Rows()
+            }
+
             if err == nil {
                 defer rHosts.Close()
                 var host certcrawler_models.Host
@@ -121,6 +161,7 @@ func (r *DataReader) GenerateDotFile(dotFilePath string) {
                     var portEntry *PortEntry
 
                     conn.ScanRows(rHosts, &host)
+                    conn.Model(&host).Association("Certificates").Find(&host.Certificates)
 
                     netcalc.AddSlice(&subnetList, netcalc.NewSubnetFromIPMask(net.ParseIP(host.Ip), 32))
         
@@ -134,13 +175,13 @@ func (r *DataReader) GenerateDotFile(dotFilePath string) {
                             }
                         }
                     }
-                    if portEntry == nil {
+                    if portEntry == nil && IsTopPort(host.Port) {
                         portEntry = &PortEntry{
                             Port     : host.Port,
                             Certs    : []Cert{},
                         }
                     }
-                    if hostEntry == nil {
+                    if hostEntry == nil && portEntry != nil {
 
                         hostEntry = &HostEntry{
                             IP      : host.Ip,
@@ -150,22 +191,17 @@ func (r *DataReader) GenerateDotFile(dotFilePath string) {
                     }
 
                     // Update certs
-                    for _, cert := range host.Certificates {
-                        for _, ec := range certificates {
-                            if ec.ID == cert.Hash {
-                                find := false
-                                for _, pec := range portEntry.Certs {
-                                    if pec.ID == cert.Hash {
-                                        find = true
-                                    }
-                                }
-                                if !find {
-                                    portEntry.Certs = append(portEntry.Certs, ec)
-                                }
+                    if hostEntry != nil && portEntry != nil {
+                        for _, cert := range host.Certificates {
+                            if !cert.IsCA || (cert.IsCA && cert.SelfSigned) {
+                                portEntry.Certs = append(portEntry.Certs, Cert{
+                                    ID        : cert.Hash,
+                                    CN        : tools.FormatCN(cert.Subject),
+                                })
                             }
+
                         }
                     }
-                    
                 
                 }
             }
@@ -189,7 +225,7 @@ func (r *DataReader) GenerateDotFile(dotFilePath string) {
         n := supnet.String()
         if !tools.SliceHasStr(supnetList2, n) {
             supnetList2 = append(supnetList2, n)
-            log.Infof("Supernet %04d: %s (from %d subnets)", i+1, n, len(group))
+            log.Debugf("Supernet %04d: %s (from %d subnets)", i+1, n, len(group))
         }
     }
 
@@ -217,16 +253,40 @@ func (r *DataReader) GenerateDotFile(dotFilePath string) {
 
     }
 
-    topList = topList[:7]
+    //topList = topList[:3]
+
+    switch strings.ToLower(r.options.ChartType){
+        case "hosts":
+            r.GenerateHostPortDotFile(dotFilePath, topList, false)
+        case "certificates":
+            r.GenerateCertificatesDotFile(dotFilePath, topList)
+    }
+
+
+
+}
+
+func (r *DataReader) GenerateHostPortDotFile(dotFilePath string, topList []*SubnetEntry, sumarizePorts bool) {
 
     f, _ := os.Create(dotFilePath)
     defer f.Close()
 
+
+    hostCount := 0
+    for _, subnet := range topList {
+        hostCount += len(subnet.Hosts)
+    }
+
+    if hostCount < 120 {
+        hostCount = 120
+    }
+
     fmt.Fprintln(f, "strict digraph {")
-    fmt.Fprintln(f, "    pad=0;")
-    fmt.Fprintf(f, "    size=\"%d!\";", 5*len(topList))
+    fmt.Fprintln(f, "    layout=twopi;")
+    fmt.Fprintf(f, "    size=\"%d!\";\n", (hostCount/2))
     fmt.Fprintln(f, "    rankdir=TB;")
-    fmt.Fprintln(f, "    ranksep=\"1.2 equally\";")
+    fmt.Fprintln(f, "    ratio=auto;")
+    fmt.Fprintln(f, "    ranksep=\"3 equally\";")
     fmt.Fprintln(f, "    nodesep=\"0.8\";")
     fmt.Fprintln(f, "    overlap=\"prism\";")
     fmt.Fprintln(f, "    node [shape=plaintext style=\"filled,rounded\" penwidth=1.4 fontsize=12];")
@@ -236,15 +296,14 @@ func (r *DataReader) GenerateDotFile(dotFilePath string) {
     //fmt.Fprintf(f, "    client_name [label=\"    %s    \" shape=\"hexagon\", style=\"filled\", width=3.0, fixedsize=true, color=\"#b22800\" fillcolor=\"#eddad5\" fontsize=24];\n", clientName)
     //fmt.Fprintf(f, "    client_name [label=\"    %s    \" shape=\"tab\", style=\"filled\", width=3.0, fixedsize=true, color=\"#b22800\" fillcolor=\"#eddad5\" fontsize=24];\n", clientName)
 
-    fmt.Fprintf(f, "    client_name [label=\"    %s    \" shape=\"component\", style=\"filled\", width=3.0, fixedsize=true, color=\"#b22800\" fillcolor=\"#eddad5\" fontsize=24];\n", r.rootNode)
-
+    //fmt.Fprintf(f, "    client_name [label=\"    %s    \" shape=\"component\", style=\"filled\", width=3.0, fixedsize=true, color=\"#b22800\" fillcolor=\"#eddad5\" fontsize=24];\n", r.rootNode)
 
     ipCount := 0
     for i, subnet := range topList {
         subnetName := fmt.Sprintf("subnet_%d", i)
 
         fmt.Fprintf(f, "    \"%s\" [shape=signature color=\"#445383\" fillcolor=\"#708bce\" label=\"%s\"]\n", subnetName, subnet.Subnet)
-        fmt.Fprintf(f, "    client_name -> %s [fillcolor=\"#00000014\" color=\"#00000014\"]\n", subnetName)
+        //fmt.Fprintf(f, "    client_name -> %s [fillcolor=\"#00000014\" color=\"#00000014\"]\n", subnetName)
 
         for _, host := range subnet.Hosts {
             ipNode := fmt.Sprintf("ip_%d", ipCount)
@@ -267,32 +326,133 @@ func (r *DataReader) GenerateDotFile(dotFilePath string) {
                 fmt.Fprintf(f, "    %s -> \"%s\" [label=\"hostname\" color=\"#999999\"]\n", ipNode, hnNode)
             }
 
-            for _, port := range host.Ports {
-                portNode := fmt.Sprintf("%s_p%d", ipNode, port.Port)
-                fmt.Fprintf(f, "    \"%s\" [shape=oval label=\"Port %d\" fillcolor=\"#b2df8a\"]\n", portNode, port.Port)
-                fmt.Fprintf(f, "    %s -> \"%s\" [label=\"port\" color=\"#33a02c\"]\n", ipNode, portNode)
+            if sumarizePorts {
+                strP := []string{}
+                for _, port := range host.Ports {
+                    strP = append(strP, fmt.Sprintf("%d", port.Port))
+                }
 
-                if len(port.Certs) == 0 {
-                    noCertNode := fmt.Sprintf("%s_none", portNode)
-                    fmt.Fprintf(f, "    \"%s\" [label=\"No Cert\" shape=note style=dashed fillcolor=\"#f2f2f2\"]\n", noCertNode)
-                    fmt.Fprintf(f, "    \"%s\" -> \"%s\" [label=\"cert\" color=\"#bbbbbb\"]\n", portNode, noCertNode)
-                } else {
-                    for _, cert := range port.Certs {
-                        certNode := cert.ID
-                        fmt.Fprintf(f, "    \"%s\" [label=\"%s\" shape=note fillcolor=\"#cab2d6\"]\n", certNode, cert.CN)
+                portNode := fmt.Sprintf("%s_p%d", ipNode, "all")
+
+                fmt.Fprintf(f, "    \"%s\" [shape=oval label=\"%s\" fillcolor=\"#b2df8a\"]\n", portNode, strings.Join(strP, ", "))
+                fmt.Fprintf(f, "    %s -> \"%s\" [label=\"port\" color=\"#33a02c\"]\n", ipNode, portNode)
+            }else{
+                for _, port := range host.Ports {
+                    portNode := fmt.Sprintf("%s_p%d", ipNode, port.Port)
+                    fmt.Fprintf(f, "    \"%s\" [shape=oval label=\"Port %d\" fillcolor=\"#b2df8a\"]\n", portNode, port.Port)
+                    fmt.Fprintf(f, "    %s -> \"%s\" [label=\"port\" color=\"#33a02c\"]\n", ipNode, portNode)
+
+                    
+                    if len(port.Certs) == 0 {
+                        noCertNode := fmt.Sprintf("%s_none", portNode)
+                        fmt.Fprintf(f, "    \"%s\" [label=\"No Cert\" shape=note style=dashed fillcolor=\"#f2f2f2\"]\n", noCertNode)
+                        fmt.Fprintf(f, "    \"%s\" -> \"%s\" [label=\"cert\" color=\"#bbbbbb\"]\n", portNode, noCertNode)
+                    } else {
+                        strCert := []string{}
+                        for _, cert := range port.Certs {
+                            strCert = append(strCert, cert.CN)
+                        }
+
+                        certNode := fmt.Sprintf("%s_certs", portNode) 
+                        fmt.Fprintf(f, "    \"%s\" [label=\"%s\" shape=note fillcolor=\"#cab2d6\"]\n", certNode, strings.Join(strCert, "\n"))
                         fmt.Fprintf(f, "    \"%s\" -> \"%s\" [label=\"cert\" color=\"#6a3d9a\"]\n", portNode, certNode)
+
+                        /*for _, cert := range port.Certs {
+                            certNode := fmt.Sprintf("%s_cer_%s", portNode, cert.ID) 
+                            fmt.Fprintf(f, "    \"%s\" [label=\"%s\" shape=note fillcolor=\"#cab2d6\"]\n", certNode, cert.CN)
+                            fmt.Fprintf(f, "    \"%s\" -> \"%s\" [label=\"cert\" color=\"#6a3d9a\"]\n", portNode, certNode)
+                        }*/
                     }
                 }
             }
-
-            
 
             ipCount++
         }
     }
 
     fmt.Fprintln(f, "}")
+}
 
+
+func (r *DataReader) GenerateCertificatesDotFile(dotFilePath string, topList []*SubnetEntry) {
+
+    f, _ := os.Create(dotFilePath)
+    defer f.Close()
+
+    hostCount := 0
+    for _, subnet := range topList {
+        hostCount += len(subnet.Hosts)
+    }
+
+    if hostCount < 120 {
+        hostCount = 120
+    }
+
+    fmt.Fprintln(f, "strict digraph {")
+    fmt.Fprintln(f, "    layout=twopi;")
+    fmt.Fprintf(f, "    size=\"%d!\";\n", (hostCount/2))
+    fmt.Fprintln(f, "    rankdir=TB;")
+    fmt.Fprintln(f, "    ratio=auto;")
+    fmt.Fprintln(f, "    ranksep=\"3 equally\";")
+    fmt.Fprintln(f, "    nodesep=\"0.8\";")
+    fmt.Fprintln(f, "    overlap=\"prism\";")
+    fmt.Fprintln(f, "    node [shape=plaintext style=\"filled,rounded\" penwidth=1.4 fontsize=12];")
+
+    //fmt.Fprintln(f, "    client_name [ style=\"filled\" shape=underline fillcolor=\"#ffffff\" label=\"Sec4US\"]")
+    //fmt.Fprintf(f, "    client_name [label=\"%s\" shape=\"polygon\", sides=10, distortion=\"0.298417\", orientation=65, skew=\"0.310367\", color=\"#b22800\" fillcolor=\"#eddad5\" fontsize=24];\n", clientName)
+    //fmt.Fprintf(f, "    client_name [label=\"    %s    \" shape=\"hexagon\", style=\"filled\", width=3.0, fixedsize=true, color=\"#b22800\" fillcolor=\"#eddad5\" fontsize=24];\n", clientName)
+    //fmt.Fprintf(f, "    client_name [label=\"    %s    \" shape=\"tab\", style=\"filled\", width=3.0, fixedsize=true, color=\"#b22800\" fillcolor=\"#eddad5\" fontsize=24];\n", clientName)
+
+    //fmt.Fprintf(f, "    client_name [label=\"    %s    \" shape=\"component\", style=\"filled\", width=3.0, fixedsize=true, color=\"#b22800\" fillcolor=\"#eddad5\" fontsize=24];\n", r.rootNode)
+
+    
+    for _, subnet := range topList {
+        for _, host := range subnet.Hosts {
+            for _, port := range host.Ports {
+                for _, cert := range port.Certs {
+                    certNode := cert.ID
+                    fmt.Fprintf(f, "    \"%s\" [label=\"%s\" shape=note fillcolor=\"#cab2d6\"]\n", certNode, cert.CN)
+                }
+
+            }
+        }
+    }
+
+    ipCount := 0
+    for i, subnet := range topList {
+        for _, host := range subnet.Hosts {
+            for _, port := range host.Ports {                    
+                if len(port.Certs) > 0 {
+                    for _, cert := range port.Certs {
+                        certNode := cert.ID
+                        subnetName := fmt.Sprintf("c_%s_subnet_%d", certNode, i)
+                        ipNode := fmt.Sprintf("%s_ip%d", subnetName, ipCount)
+                        portNode := fmt.Sprintf("%s_p%d", ipNode, port.Port)
+
+                        fmt.Fprintf(f, "    \"%s\" [shape=signature color=\"#445383\" fillcolor=\"#708bce\" label=\"%s\"]\n", subnetName, subnet.Subnet)
+                        fmt.Fprintf(f, "    \"%s\" -> \"%s\" [label=\"\" color=\"#6a3d9a\"]\n", certNode, subnetName)
+
+                        fmt.Fprintf(f, "    %s [ shape=box label=\"%s\" ];\n", ipNode, host.IP)
+                        //fmt.Fprintf(f, "    %s -> \"%s\" [label=\"\" color=\"#999999\"]\n", subnetName, ipNode)
+                        
+
+                        portNode = fmt.Sprintf("%s_p%d", subnetName, port.Port)
+                        fmt.Fprintf(f, "    \"%s\" [shape=oval label=\"Port %d\" fillcolor=\"#b2df8a\"]\n", portNode, port.Port)
+                        //fmt.Fprintf(f, "    %s -> \"%s\" [label=\"port\" color=\"#33a02c\"]\n", ipNode, portNode)
+                        fmt.Fprintf(f, "    %s -> \"%s\" [label=\"\" color=\"#33a02c\"]\n", subnetName, portNode)
+                        fmt.Fprintf(f, "    %s -> \"%s\" [label=\"\" color=\"#999999\"]\n", portNode, ipNode)
+
+                        ipCount++
+
+                    }
+
+                }
+
+            }
+        }
+    }
+
+    fmt.Fprintln(f, "}")
 }
 
 func (r *DataReader) GetCertificates() []Cert {
@@ -332,6 +492,22 @@ func (r *DataReader) GetCertificates() []Cert {
     return certificates
 }
 
+
+func (r *DataReader) prepareSQL(fields []string) string {
+    sql := ""
+    for _, f := range fields {
+        for _, w := range r.options.FilterList {
+            if sql != "" {
+                sql += " or "
+            }
+            sql += " " + f + " like '%"+ w + "%' "
+        }
+    }
+    if sql != "" {
+        sql = " and (" + sql + ")"
+    }
+    return sql
+}
 
 func (r *DataReader) Close() {
     r.enumdnsFiles = []string{ }

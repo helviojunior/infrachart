@@ -9,6 +9,9 @@ type Options struct {
     // Logging is logging options
     Logging Logging
     
+    FilterList []string
+
+    ChartType string
 }
 
 // Logging is log related options
@@ -30,5 +33,6 @@ func NewDefaultOptions() *Options {
             Debug:         true,
             LogScanErrors: true,
         },
+        FilterList: []string{},
     }
 }

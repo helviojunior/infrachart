@@ -129,7 +129,7 @@ target.`)),
         reader.GenerateDotFile(convertCmdFlags.toFile)
         log.Info("Process done!")
 
-        fmt.Printf(ascii.Markdown("# Done!\n\nUse the command `twopi -Tpng output.dot -o graph.png` to generate the image"))
+        fmt.Printf(ascii.Markdown("# Done!\n\nUse the command `dot -Tpng output.dot -o graph.png` to generate the image"))
 
     },
 }
@@ -142,4 +142,6 @@ func init() {
 
     convertCmd.Flags().StringVarP(&convertCmdFlags.fromPath, "from-path", "p", "", "The file to convert from")
     convertCmd.Flags().StringVarP(&convertCmdFlags.toFile, "to-file", "o", "./infrachart.dot", "The file to convert to. Must be .dot extension")
+
+    convertCmd.Flags().StringVarP(&opts.ChartType, "type", "t", "hosts", "Chart type. (Options: hosts, certificates)")
 }
