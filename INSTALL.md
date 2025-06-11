@@ -235,7 +235,7 @@ go get ./...
 go build
 ```
 
-If you want to update go.sum file just run the command `go mod tidy`.
+If you want to update go.sum file just run the command `go clean -modcache && get -u ./... && go mod tidy`.
 
 ## Installing system wide
 

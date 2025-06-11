@@ -9,15 +9,15 @@ import (
 // Logo returns the infrachart ascii logo
 func Logo() string {
 	txt := `                                    
-{R}Infra
-{GR}  |
-{GR}  o-- {G}Enumeration
-{GR}  |       |\
-{GR}  |       | \
-{GR}  |       |  \
-{GR}  |     {P}Flow {O}Chart
-{GR}  |
-{GR}  o-- {B}v{G}`
+    {R}Infra
+    {GR}  |
+    {GR}  o-- {G}Enumeration
+    {GR}  |       |\
+    {GR}  |       | \
+    {GR}  |       |  \
+    {GR}  |     {P}Flow {O}Chart
+    {GR}  |
+    {GR}  o-- {B}v{G}`
 
 	v := fmt.Sprintf("%s-%s", version.Version, version.GitHash)
 	txt += v + "{W}"

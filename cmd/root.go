@@ -10,9 +10,11 @@ import (
 	"github.com/helviojunior/infrachart/internal/ascii"
 	"github.com/helviojunior/infrachart/pkg/log"
 	"github.com/helviojunior/infrachart/pkg/readers"
+    resolver "github.com/helviojunior/gopathresolver"
 	"github.com/spf13/cobra"
 )
 
+var workspacePath string
 var opts = &readers.Options{}
 var rootCmd = &cobra.Command{
 	Use:   "infrachart",
@@ -23,6 +25,7 @@ var rootCmd = &cobra.Command{
 - infrachart report dot --from-path ~/client_data/enumdns.sqlite3 --to-file infrachart.dot
 `,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		var err error
 		
 	    if cmd.CalledAs() != "version" && !opts.Logging.Silence {
 			fmt.Println(ascii.Logo())
@@ -37,9 +40,10 @@ var rootCmd = &cobra.Command{
 			log.Debug("debug logging enabled")
 		}
 
-		if cmd.CalledAs() == "version" {
-			return nil
-		}
+		workspacePath, err = resolver.ResolveFullPath(".")
+        if err != nil {
+            return err
+        }
 
 		return nil
 	},
@@ -96,6 +100,7 @@ func Execute() {
 func init() {
 	
 	rootCmd.PersistentFlags().BoolVarP(&opts.Logging.Debug, "debug-log", "D", false, "Enable debug logging")
+	rootCmd.PersistentFlags().BoolVar(&opts.Logging.Debug, "db-debug-log", false, "Enable debug logging")
 	rootCmd.PersistentFlags().BoolVarP(&opts.Logging.Silence, "quiet", "q", false, "Silence (almost all) logging")
 	    
 }

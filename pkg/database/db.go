@@ -73,6 +73,11 @@ func Connection(uri string, shouldExist, debug bool) (*gorm.DB, error) {
 	return c, nil
 }
 
+func CloseDB(db *gorm.DB) {
+	sqlDB, _ := db.DB()
+    _ = sqlDB.Close()
+}
+
 func GetDbApplication(db *gorm.DB) string {
 	if db.Migrator().HasTable(&Application{}) {
 		var app Application

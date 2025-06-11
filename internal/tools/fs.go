@@ -129,6 +129,25 @@ func FileExists(path string) bool {
 	return !os.IsNotExist(err)
 }
 
+func FileType(path string) (string, error) {
+    fi, err := os.Stat(path)
+
+    if err != nil {
+    	return "", err
+    }
+
+	switch mode := fi.Mode(); {
+	    case mode.IsDir():
+	        // do directory stuff
+	        return "directory", nil
+	    case mode.IsRegular():
+	        // do file stuff
+	        return "file", nil
+	    }
+
+	return "undefined", nil
+}
+
 // MoveFile moves a file from a to b
 func MoveFile(sourcePath, destPath string) error {
 	if err := os.Rename(sourcePath, destPath); err == nil {

@@ -2,6 +2,8 @@ package tools
 
 import (
 	"strconv"
+    
+    "strings"
 )
 
 // LeftTrucate a string if its more than max
@@ -41,3 +43,22 @@ func FormatInt64(n int64) string {
         }
     }
 }
+
+func FormatCN(cn string) string {
+    if len(cn) <= 3 {
+        return cn
+    }
+    txt := cn
+    if strings.ToLower(txt[0:3]) == "cn=" {
+        p := strings.Split(txt, ",")
+        if len(p) >= 1 {
+            txt = strings.Replace(strings.Replace(p[0], "CN=", "", -1), "cn=", "", -1)
+        }
+    }
+    if txt == "" {
+        txt = cn
+    }
+    txt = strings.Replace(txt, "\"", "", -1)
+    txt = strings.Replace(txt, "'", "", -1)
+    return txt
+} 

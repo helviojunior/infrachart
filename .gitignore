@@ -3,9 +3,12 @@
 *.dll
 *.so
 *.dylib
+*.sqlite
 *.sqlite3
+*.db
 *.jsonl
 *.txt
+*.dot
 infrachart
 infrachart.exe
 # dep vendor/

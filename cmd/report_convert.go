@@ -1,30 +1,31 @@
 package cmd
 
 import (
-
-    //"errors"
+    "os"
+    "errors"
     //"fmt"
-    //"path/filepath"
-    //"strings"
+    "path/filepath"
+    "strings"
 
     "github.com/helviojunior/infrachart/internal/ascii"
-    //"github.com/helviojunior/infrachart/internal/tools"
-    //"github.com/helviojunior/infrachart/pkg/log"
-    //resolver "github.com/helviojunior/gopathresolver"
+    "github.com/helviojunior/infrachart/internal/tools"
+    "github.com/helviojunior/infrachart/pkg/readers"
+    "github.com/helviojunior/infrachart/pkg/log"
+    resolver "github.com/helviojunior/gopathresolver"
     "github.com/spf13/cobra"
 )
 
-var conversionCmdExtensions = []string{".sqlite3", ".db", ".dot"}
+var conversionCmdExtensions = []string{".sqlite", ".sqlite3", ".db"}
 var convertCmdFlags = struct {
-    fromFile string
-    toFile   string
-
-    fromExt string
-    toExt   string
+    fromPath        string
+    fromPathType    string
+    toFile          string
+    toExt           string
+    rootNodeName    string
 }{}
 var convertCmd = &cobra.Command{
     Use:   "dot",
-    Short: "Convert between SQLite and JSON Lines file formats",
+    Short: "Convert data to Graphviz dot file",
     Long: ascii.LogoHelp(ascii.Markdown(`
 # report dot
 
@@ -38,17 +39,16 @@ target.`)),
 - infrachart report dot --from-path ~/client_data/enumdns.sqlite3 --to-file infrachart.dot
 `),
     PreRunE: func(cmd *cobra.Command, args []string) error {
-        /*var err error
+        var err error
         
-        
-        if convertCmdFlags.fromFile == "" {
-            return errors.New("from file not set")
+        if convertCmdFlags.fromPath == "" {
+            return errors.New("from-path not set")
         }
         if convertCmdFlags.toFile == "" {
-            return errors.New("to file not set")
+            return errors.New("to-file not set")
         }
 
-        convertCmdFlags.fromFile, err = resolver.ResolveFullPath(convertCmdFlags.fromFile)
+        convertCmdFlags.fromPath, err = resolver.ResolveFullPath(convertCmdFlags.fromPath)
         if err != nil {
             return err
         }
@@ -58,89 +58,86 @@ target.`)),
             return err
         }
 
-        convertCmdFlags.fromExt = strings.ToLower(filepath.Ext(convertCmdFlags.fromFile))
         convertCmdFlags.toExt = strings.ToLower(filepath.Ext(convertCmdFlags.toFile))
 
-        if convertCmdFlags.fromExt == "" || convertCmdFlags.toExt == "" {
-            return errors.New("source and destination files must have extensions")
+        if convertCmdFlags.toExt == "" {
+            return errors.New("destination files must have extensions")
         }
 
-        if convertCmdFlags.fromExt == convertCmdFlags.toExt {
-            return errors.New("👀 source and destination file types must be different")
-        }
-
-        if convertCmdFlags.fromFile == convertCmdFlags.toFile {
+        if convertCmdFlags.fromPath == convertCmdFlags.toFile {
             return errors.New("source and destination files cannot be the same")
         }
 
-        if !tools.SliceHasStr(conversionCmdExtensions, convertCmdFlags.fromExt) {
-            return errors.New("unsupported from file type")
+        if convertCmdFlags.toExt != ".dot" {
+            return errors.New("unsupported destination file type")
         }
-        if !tools.SliceHasStr(conversionCmdExtensions, convertCmdFlags.toExt) &&  convertCmdFlags.toExt != ".txt" {
-            return errors.New("unsupported to file type")
+
+        if convertCmdFlags.fromPathType, err = tools.FileType(convertCmdFlags.fromPath); err != nil {
+            return err
         }
-        */
+
+        if convertCmdFlags.fromPathType == "file" {
+
+            fromExt := strings.ToLower(filepath.Ext(convertCmdFlags.fromPath))
+
+            if !tools.SliceHasStr(conversionCmdExtensions, fromExt) {
+                return errors.New("unsupported source file type")
+            }
+        }
+
         return nil
     },
     Run: func(cmd *cobra.Command, args []string) {
-        /*
-        var writer writers.Writer
-        var err error
-        if convertCmdFlags.toExt == ".sqlite3" || convertCmdFlags.toExt == ".db" {
-            writer, err = writers.NewDbWriter(fmt.Sprintf("sqlite:///%s", convertCmdFlags.toFile), false)
+        //var ft string
+        //var err error
+
+        log.Info("Starting process...")
+
+        reader, err := readers.NewDataReader(convertCmdFlags.rootNodeName, *opts)
+        if err != nil {
+            log.Error("Error starting data reader", "err", err)
+            os.Exit(2)
+        }
+
+        if convertCmdFlags.fromPathType == "file" {
+            log.Debug("Adding database file", "path", convertCmdFlags.fromPathType)
+            reader.AddDatabase(convertCmdFlags.fromPathType)
+        }else {
+
+            log.Debug("Checking folder", "path", convertCmdFlags.fromPath)
+            entries, err := os.ReadDir(convertCmdFlags.fromPath)
             if err != nil {
-                log.Error("could not get a database writer up", "err", err)
-                return
+                log.Error("Cannot reader path", "path", convertCmdFlags.fromPath, "err", err)
+                os.Exit(2)
             }
-        } else if convertCmdFlags.toExt == ".jsonl" {
-            toFile, err := tools.CreateFileWithDir(convertCmdFlags.toFile)
-            if err != nil {
-                log.Error("could not create target file", "err", err)
-                return
-            }
-            writer, err = writers.NewJsonWriter(toFile)
-            if err != nil {
-                log.Error("could not get a JSON writer up", "err", err)
-                return
-            }
-        } else if convertCmdFlags.toExt == ".txt" {
-            toFile, err := tools.CreateFileWithDir(convertCmdFlags.toFile)
-            if err != nil {
-                log.Error("could not create target file", "err", err)
-                return
-            }
-            writer, err = writers.NewTextWriter(toFile)
-            if err != nil {
-                log.Error("could not get a JSON writer up", "err", err)
-                return
+         
+            for _, e := range entries {
+                fileFullPath := filepath.Join(convertCmdFlags.fromPath, e.Name())
+                fileRelativePath, _ := resolver.ResolveRelativePath(convertCmdFlags.fromPath, filepath.Join(convertCmdFlags.fromPath, e.Name()))
+                fileExt := strings.ToLower(filepath.Ext(e.Name()))
+                if tools.SliceHasStr(conversionCmdExtensions, fileExt) {
+                    log.Debug("Adding database file", "path", fileRelativePath)
+                    reader.AddDatabase(fileFullPath)
+                }else{
+                    log.Debug("Ignoring file", "path", fileRelativePath)
+                }
+                
             }
 
         }
 
-        rptWriters = append(rptWriters, writer)
+        reader.GenerateDotFile(convertCmdFlags.toFile)
+        log.Info("Process done!")
 
-        if convertCmdFlags.fromExt == ".sqlite3" || convertCmdFlags.fromExt == ".db" {
-            if err := convertFromDbTo(convertCmdFlags.fromFile, rptWriters); err != nil {
-                log.Error("failed to convert from SQLite", "err", err)
-                return
-            }
-        } else if convertCmdFlags.fromExt == ".jsonl" {
-            if err := convertFromJsonlTo(convertCmdFlags.fromFile, rptWriters); err != nil {
-                log.Error("failed to convert from JSON Lines", "err", err)
-                return
-            }
-        }
-
-        for _, w := range rptWriters {
-            w.Finish()
-        }
-        */
     },
 }
 
 func init() {
     reportCmd.AddCommand(convertCmd)
 
-    convertCmd.Flags().StringVar(&convertCmdFlags.fromFile, "from-file", "", "The file to convert from")
-    convertCmd.Flags().StringVar(&convertCmdFlags.toFile, "to-file", "", "The file to convert to. Use .sqlite3 for conversion to SQLite, and .jsonl for conversion to JSON Lines")
+    
+    convertCmd.Flags().StringVarP(&convertCmdFlags.rootNodeName, "name", "n", "Infra Chart", "The name of Root Node")
+
+    convertCmd.Flags().StringVarP(&convertCmdFlags.fromPath, "from-path", "p", "", "The file to convert from")
+    convertCmd.Flags().StringVarP(&convertCmdFlags.toFile, "to-file", "o", "./infrachart.dot", "The file to convert to. Must be .dot extension")
 }
