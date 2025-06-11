@@ -217,14 +217,14 @@ func (r *DataReader) GenerateDotFile(dotFilePath string) {
 
     }
 
-    topList = topList[:3]
+    topList = topList[:7]
 
     f, _ := os.Create(dotFilePath)
     defer f.Close()
 
     fmt.Fprintln(f, "strict digraph {")
     fmt.Fprintln(f, "    pad=0;")
-    fmt.Fprintln(f, "    size=\"67!\";")
+    fmt.Fprintf(f, "    size=\"%d!\";", 5*len(topList))
     fmt.Fprintln(f, "    rankdir=TB;")
     fmt.Fprintln(f, "    ranksep=\"1.2 equally\";")
     fmt.Fprintln(f, "    nodesep=\"0.8\";")
@@ -240,29 +240,19 @@ func (r *DataReader) GenerateDotFile(dotFilePath string) {
 
 
     ipCount := 0
-    rank := []string{}
     for i, subnet := range topList {
-        insertRank := true
-        clusterName := fmt.Sprintf("cluster_%d", i)
-        fmt.Fprintf(f, "    subgraph %s {\n", clusterName)
-        fmt.Fprintln(f, "        style=filled;")
-        fmt.Fprintln(f, "        fillcolor=\"#e7edff\";")
-        fmt.Fprintln(f, "        node [style=filled,fillcolor=\"#d4d4d4\",color=\"#676767\"];")
-        fmt.Fprintf(f, "        label = \"Subnet %s\";\n", subnet.Subnet)
-        fmt.Fprintln(f, "        color=\"#1f78b4\";")
+        subnetName := fmt.Sprintf("subnet_%d", i)
+
+        fmt.Fprintf(f, "    \"%s\" [shape=signature color=\"#445383\" fillcolor=\"#708bce\" label=\"%s\"]\n", subnetName, subnet.Subnet)
+        fmt.Fprintf(f, "    client_name -> %s [fillcolor=\"#00000014\" color=\"#00000014\"]\n", subnetName)
 
         for _, host := range subnet.Hosts {
             ipNode := fmt.Sprintf("ip_%d", ipCount)
-            fmt.Fprintf(f, "        %s [ shape=box label=\"%s\" ];\n", ipNode, host.IP)
+            fmt.Fprintf(f, "    %s [ shape=box label=\"%s\" ];\n", ipNode, host.IP)
+            fmt.Fprintf(f, "    %s -> \"%s\" [label=\"\" color=\"#999999\"]\n", subnetName, ipNode)
             ipCount++
 
-            if insertRank {
-                rank = append(rank, ipNode)
-                insertRank = false
-            }
         }
-
-        fmt.Fprintln(f, "    }")
         
     }
 
@@ -295,7 +285,7 @@ func (r *DataReader) GenerateDotFile(dotFilePath string) {
                 }
             }
 
-            fmt.Fprintf(f, "    client_name -> ip_%d [fillcolor=\"#00000014\" color=\"#00000014\"]\n", ipCount)
+            
 
             ipCount++
         }

@@ -3,7 +3,7 @@ package cmd
 import (
     "os"
     "errors"
-    //"fmt"
+    "fmt"
     "path/filepath"
     "strings"
 
@@ -128,6 +128,8 @@ target.`)),
 
         reader.GenerateDotFile(convertCmdFlags.toFile)
         log.Info("Process done!")
+
+        fmt.Printf(ascii.Markdown("# Done!\n\nUse the command `twopi -Tpng output.dot -o graph.png` to generate the image"))
 
     },
 }
