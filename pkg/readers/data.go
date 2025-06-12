@@ -12,9 +12,8 @@ import (
     resolver "github.com/helviojunior/gopathresolver"
 
     //enumdns_db "github.com/helviojunior/enumdns/pkg/database"
-    //enumdns_models "github.com/helviojunior/enumdns/pkg/models"
+    enumdns_models "github.com/helviojunior/enumdns/pkg/models"
 
-    //certcrawler_db "github.com/helviojunior/certcrawler/pkg/database"
     certcrawler_models "github.com/helviojunior/certcrawler/pkg/models"
 
     netcalc "github.com/helviojunior/pcapraptor/pkg/netcalc"
@@ -63,6 +62,7 @@ type HostEntry struct {
     IP        string
     Hostnames []string
     Ports     []*PortEntry
+    Hide      bool
 }
 
 type PortEntry struct {
@@ -134,6 +134,90 @@ func (r *DataReader) GenerateDotFile(dotFilePath string) {
     subnetList := []netcalc.SubnetData{}
     hostList := []*HostEntry{}
 
+    
+    for _, eDNS := range r.enumdnsFiles {
+        conn, err := database.Connection(fmt.Sprintf("sqlite:///%s", eDNS), true, false)
+        if err == nil {
+            defer database.CloseDB(conn)
+
+            var rResults *sql.Rows
+
+            if len(r.options.FilterList) > 0 {
+                sqlHosts := r.prepareSQL([]string{"fqdn", "ptr"})
+
+                rResults, err = conn.Model(&enumdns_models.Result{}).Preload(clause.Associations).Where("[exists] = 1 AND (ipv4 != '' or ipv6 != '') " + sqlHosts).Rows()
+                
+            }else{
+                rResults, err = conn.Model(&enumdns_models.Result{}).Preload(clause.Associations).Rows()
+            }
+
+            if err == nil {
+                defer rResults.Close()
+                var resultItem enumdns_models.Result
+                for rResults.Next() {
+                    var hostEntry *HostEntry
+
+                    conn.ScanRows(rResults, &resultItem)
+
+                    if resultItem.IPv4 != "" {
+                        netcalc.AddSlice(&subnetList, netcalc.NewSubnetFromIPMask(net.ParseIP(resultItem.IPv4), 32))
+                    }
+        
+                    for _, he := range hostList {
+                        if hostEntry == nil && he.IP == resultItem.IPv4 {
+                            hostEntry = he
+                        }
+                    }
+                    
+                    if hostEntry == nil {
+
+                        hostEntry = &HostEntry{
+                            IP        : resultItem.IPv4,
+                            Ports     : []*PortEntry{ },
+                            Hostnames : []string{},
+                            Hide      : (resultItem.SaaSProduct != ""),
+                        }
+
+                        hostList = append(hostList, hostEntry)
+                    }
+
+                    if hostEntry != nil {
+
+                        ptr := strings.Trim(resultItem.Ptr, ".")
+                        hostName := strings.Trim(resultItem.FQDN, ".")
+
+                        if ptr != "" {
+                            //No filter out PTR data   
+                            if !tools.SliceHasStr(hostEntry.Hostnames, ptr) {
+                                hostEntry.Hostnames = append(hostEntry.Hostnames, ptr)
+                            }
+                        }
+
+                        if hostName != "" {
+                            if len(r.options.FilterList) > 0 {
+                                for _, f := range r.options.FilterList {
+                                    if strings.Contains(hostName, f) {
+                                        if !tools.SliceHasStr(hostEntry.Hostnames, hostName) {
+                                            hostEntry.Hostnames = append(hostEntry.Hostnames, hostName)
+                                        }
+                                    }
+                                }
+                            }else {
+                                if !tools.SliceHasStr(hostEntry.Hostnames, hostName) {
+                                    hostEntry.Hostnames = append(hostEntry.Hostnames, hostName)
+                                }
+                            }
+                        }
+
+                    }
+                }
+            }
+
+        }
+        
+    }
+
+
     for _, c := range r.certcrawlerFiles {
         conn, err := database.Connection(fmt.Sprintf("sqlite:///%s", c), true, false)
         if err == nil {
@@ -195,28 +279,30 @@ func (r *DataReader) GenerateDotFile(dotFilePath string) {
                     if hostEntry != nil && portEntry != nil {
 
                         if host.Ptr != "" {
-                            for _, f := range r.options.FilterList {
-                                if strings.Contains(host.Ptr, f) {
-                                    if !tools.SliceHasStr(hostEntry.Hostnames, host.Ptr) {
-                                        hostEntry.Hostnames = append(hostEntry.Hostnames, host.Ptr)
-                                    }
-                                }
+                            //No filter out PTR data   
+                            if !tools.SliceHasStr(hostEntry.Hostnames, host.Ptr) {
+                                hostEntry.Hostnames = append(hostEntry.Hostnames, host.Ptr)
                             }
+                        
                         }
 
                         for _, cert := range host.Certificates {
                             if !cert.IsCA || (cert.SelfSigned && len(host.Certificates) == 1) {
                                 ins := false
-                                for _, f := range r.options.FilterList {
-                                    if strings.Contains(cert.Subject, f) {
-                                        ins = true
-                                    }else {
-                                        for _, alt := range cert.Names {
-                                            if strings.Contains(alt.Name, f) {
-                                                ins = true
+                                if len(r.options.FilterList) > 0 {
+                                    for _, f := range r.options.FilterList {
+                                        if strings.Contains(cert.Subject, f) {
+                                            ins = true
+                                        }else {
+                                            for _, alt := range cert.Names {
+                                                if strings.Contains(alt.Name, f) {
+                                                    ins = true
+                                                }
                                             }
                                         }
                                     }
+                                }else{
+                                    ins = true
                                 }
                                 if ins {
                                     newCrt := Cert{
@@ -225,8 +311,14 @@ func (r *DataReader) GenerateDotFile(dotFilePath string) {
                                         AlternateNames : []string{},
                                     }
                                     for _, alt := range cert.Names {
-                                        for _, f := range r.options.FilterList {
-                                            if strings.Contains(alt.Name, f) && alt.Name != newCrt.CN {
+                                        if len(r.options.FilterList) > 0 {
+                                            for _, f := range r.options.FilterList {
+                                                if strings.Contains(alt.Name, f) && alt.Name != newCrt.CN {
+                                                    newCrt.AlternateNames = append(newCrt.AlternateNames, alt.Name)
+                                                }
+                                            }
+                                        }else{
+                                            if alt.Name != newCrt.CN {
                                                 newCrt.AlternateNames = append(newCrt.AlternateNames, alt.Name)
                                             }
                                         }
@@ -287,6 +379,13 @@ func (r *DataReader) GenerateDotFile(dotFilePath string) {
 
     }
 
+    hostCount := 0
+    for _, subnet := range topList {
+        hostCount += len(subnet.Hosts)
+    }
+
+    log.Infof("Generating %d host nodes", hostCount)
+
     //topList = topList[:3]
 
     switch strings.ToLower(r.options.ChartType){
@@ -334,16 +433,25 @@ func (r *DataReader) GenerateHostPortDotFile(dotFilePath string, topList []*Subn
 
     ipCount := 0
     for i, subnet := range topList {
+        if len(subnet.Hosts) == 0 {
+            continue
+        }
+
         subnetName := fmt.Sprintf("subnet_%d", i)
 
         fmt.Fprintf(f, "    \"%s\" [shape=signature color=\"#445383\" fillcolor=\"#708bce\" label=\"%s\"]\n", subnetName, subnet.Subnet)
         //fmt.Fprintf(f, "    client_name -> %s [fillcolor=\"#00000014\" color=\"#00000014\"]\n", subnetName)
 
         for _, host := range subnet.Hosts {
+            if host.Hide {
+                continue
+            }
+
             ipNode := fmt.Sprintf("ip_%d", ipCount)
             fmt.Fprintf(f, "    %s [ shape=box label=\"%s\" ];\n", ipNode, host.IP)
             fmt.Fprintf(f, "    %s -> \"%s\" [label=\"\" color=\"#999999\"]\n", subnetName, ipNode)
             ipCount++
+        
 
         }
         
@@ -352,12 +460,20 @@ func (r *DataReader) GenerateHostPortDotFile(dotFilePath string, topList []*Subn
     ipCount = 0
     for _, subnet := range topList {
         for _, host := range subnet.Hosts {
+            if host.Hide {
+                continue
+            }
+
             ipNode := fmt.Sprintf("ip_%d", ipCount)
 
-            for _, hn := range host.Hostnames {
-                hnNode := fmt.Sprintf("%s_hn", hn)
-                fmt.Fprintf(f, "    \"%s\" [shape=folder fillcolor=\"#368b90\" label=\"%s\"]\n", hnNode, hn)
-                fmt.Fprintf(f, "    %s -> \"%s\" [label=\"hostname\" color=\"#999999\"]\n", ipNode, hnNode)
+            if len(host.Hostnames) > 0 {
+                hnNode := fmt.Sprintf("%s_hn", ipNode)
+                strNames := []string{}
+                for _, hn := range host.Hostnames {
+                    strNames = append(strNames, hn)
+                }
+                fmt.Fprintf(f, "    \"%s\" [shape=folder fillcolor=\"#71bbc1\" label=\"%s\"]\n", hnNode, strings.Join(strNames, "\n"))
+                fmt.Fprintf(f, "    %s -> \"%s\" [label=\"hostname\" color=\"#999999\" weight=10]\n", ipNode, hnNode)
             }
 
             if sumarizePorts {
@@ -445,6 +561,9 @@ func (r *DataReader) GenerateCertificatesDotFile(dotFilePath string, topList []*
     
     for _, subnet := range topList {
         for _, host := range subnet.Hosts {
+            if host.Hide {
+                continue
+            }
             for _, port := range host.Ports {
                 for _, cert := range port.Certs {
                     certNode := cert.ID
@@ -464,6 +583,9 @@ func (r *DataReader) GenerateCertificatesDotFile(dotFilePath string, topList []*
     ipCount := 0
     for i, subnet := range topList {
         for _, host := range subnet.Hosts {
+            if host.Hide {
+                continue
+            }
             for _, port := range host.Ports {                    
                 if len(port.Certs) > 0 {
                     for _, cert := range port.Certs {
