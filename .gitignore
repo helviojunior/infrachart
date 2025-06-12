@@ -30,3 +30,6 @@ screenshots/
 .glide/
 .DS_Store
 .idea/
+
+# Permmit images
+!images/
