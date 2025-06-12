@@ -51,7 +51,7 @@ func IsTopPort(port uint) bool {
 type Cert struct {
     ID string
     CN string
-    AlternateNames string
+    AlternateNames []string
 }
 
 type SubnetEntry struct {
@@ -184,25 +184,59 @@ func (r *DataReader) GenerateDotFile(dotFilePath string) {
                     if hostEntry == nil && portEntry != nil {
 
                         hostEntry = &HostEntry{
-                            IP      : host.Ip,
-                            Ports   : []*PortEntry{ portEntry, },
+                            IP        : host.Ip,
+                            Ports     : []*PortEntry{ portEntry, },
+                            Hostnames : []string{},
                         }
+
                         hostList = append(hostList, hostEntry)
                     }
 
-                    // Update certs
                     if hostEntry != nil && portEntry != nil {
+
+                        if host.Ptr != "" {
+                            for _, f := range r.options.FilterList {
+                                if strings.Contains(host.Ptr, f) {
+                                    if !tools.SliceHasStr(hostEntry.Hostnames, host.Ptr) {
+                                        hostEntry.Hostnames = append(hostEntry.Hostnames, host.Ptr)
+                                    }
+                                }
+                            }
+                        }
+
                         for _, cert := range host.Certificates {
-                            if !cert.IsCA || (cert.IsCA && cert.SelfSigned) {
-                                portEntry.Certs = append(portEntry.Certs, Cert{
-                                    ID        : cert.Hash,
-                                    CN        : tools.FormatCN(cert.Subject),
-                                })
+                            if !cert.IsCA || (cert.SelfSigned && len(host.Certificates) == 1) {
+                                ins := false
+                                for _, f := range r.options.FilterList {
+                                    if strings.Contains(cert.Subject, f) {
+                                        ins = true
+                                    }else {
+                                        for _, alt := range cert.Names {
+                                            if strings.Contains(alt.Name, f) {
+                                                ins = true
+                                            }
+                                        }
+                                    }
+                                }
+                                if ins {
+                                    newCrt := Cert{
+                                        ID        : cert.Hash,
+                                        CN        : tools.FormatCN(cert.Subject),
+                                        AlternateNames : []string{},
+                                    }
+                                    for _, alt := range cert.Names {
+                                        for _, f := range r.options.FilterList {
+                                            if strings.Contains(alt.Name, f) && alt.Name != newCrt.CN {
+                                                newCrt.AlternateNames = append(newCrt.AlternateNames, alt.Name)
+                                            }
+                                        }
+                                    }
+                                    portEntry.Certs = append(portEntry.Certs, newCrt)
+                                }
                             }
 
                         }
                     }
-                
                 }
             }
         }
@@ -322,7 +356,7 @@ func (r *DataReader) GenerateHostPortDotFile(dotFilePath string, topList []*Subn
 
             for _, hn := range host.Hostnames {
                 hnNode := fmt.Sprintf("%s_hn", hn)
-                fmt.Fprintf(f, "    \"%s\" [shape=underline fillcolor=\"#ffffff\" label=\"%s\"]\n", hnNode, hn)
+                fmt.Fprintf(f, "    \"%s\" [shape=folder fillcolor=\"#368b90\" label=\"%s\"]\n", hnNode, hn)
                 fmt.Fprintf(f, "    %s -> \"%s\" [label=\"hostname\" color=\"#999999\"]\n", ipNode, hnNode)
             }
 
@@ -335,12 +369,12 @@ func (r *DataReader) GenerateHostPortDotFile(dotFilePath string, topList []*Subn
                 portNode := fmt.Sprintf("%s_p%d", ipNode, "all")
 
                 fmt.Fprintf(f, "    \"%s\" [shape=oval label=\"%s\" fillcolor=\"#b2df8a\"]\n", portNode, strings.Join(strP, ", "))
-                fmt.Fprintf(f, "    %s -> \"%s\" [label=\"port\" color=\"#33a02c\"]\n", ipNode, portNode)
+                fmt.Fprintf(f, "    %s -> \"%s\" [label=\"\" color=\"#33a02c\"]\n", ipNode, portNode)
             }else{
                 for _, port := range host.Ports {
                     portNode := fmt.Sprintf("%s_p%d", ipNode, port.Port)
                     fmt.Fprintf(f, "    \"%s\" [shape=oval label=\"Port %d\" fillcolor=\"#b2df8a\"]\n", portNode, port.Port)
-                    fmt.Fprintf(f, "    %s -> \"%s\" [label=\"port\" color=\"#33a02c\"]\n", ipNode, portNode)
+                    fmt.Fprintf(f, "    %s -> \"%s\" [label=\"\" color=\"#33a02c\"]\n", ipNode, portNode)
 
                     
                     if len(port.Certs) == 0 {
@@ -351,6 +385,9 @@ func (r *DataReader) GenerateHostPortDotFile(dotFilePath string, topList []*Subn
                         strCert := []string{}
                         for _, cert := range port.Certs {
                             strCert = append(strCert, cert.CN)
+                            for _, alt := range cert.AlternateNames {
+                                strCert = append(strCert, alt)
+                            }
                         }
 
                         certNode := fmt.Sprintf("%s_certs", portNode) 
@@ -411,7 +448,13 @@ func (r *DataReader) GenerateCertificatesDotFile(dotFilePath string, topList []*
             for _, port := range host.Ports {
                 for _, cert := range port.Certs {
                     certNode := cert.ID
-                    fmt.Fprintf(f, "    \"%s\" [label=\"%s\" shape=note fillcolor=\"#cab2d6\"]\n", certNode, cert.CN)
+                    strCert := []string{}
+                    strCert = append(strCert, cert.CN)
+                    for _, alt := range cert.AlternateNames {
+                        strCert = append(strCert, alt)
+                    }
+                
+                    fmt.Fprintf(f, "    \"%s\" [label=\"%s\" shape=note fillcolor=\"#cab2d6\"]\n", certNode, strings.Join(strCert, "\n"))
                 }
 
             }
