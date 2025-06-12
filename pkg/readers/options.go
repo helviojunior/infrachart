@@ -12,6 +12,8 @@ type Options struct {
     FilterList []string
 
     ChartType string
+
+    FullChart bool
 }
 
 // Logging is log related options

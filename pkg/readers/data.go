@@ -138,6 +138,21 @@ func (r *DataReader) AddDatabase(filePath string) error {
     return nil
 }
 
+func (r *DataReader) AddSaaS(ip net.IP, name string, saasSubnetList *[]netcalc.SubnetData) bool{
+
+    if r.options.FullChart {
+        return false
+    }
+
+    ss, _, _ := enumdns_run.ContainsSaaS(name)
+    if ss {
+       netcalc.AddSlice(saasSubnetList, netcalc.NewSubnetFromIPMask(ip, 24))
+       return true
+    }
+
+    return false
+}
+
 func (r *DataReader) GenerateDotFile(dotFilePath string) {
     //
     //certificates := r.GetCertificates()
@@ -148,9 +163,9 @@ func (r *DataReader) GenerateDotFile(dotFilePath string) {
     }*/
 
     subnetList := []netcalc.SubnetData{}
+    saasSubnetList := []netcalc.SubnetData{}
     hostList := []*HostEntry{}
 
-    
     for _, eDNS := range r.enumdnsFiles {
         log.Info("Reading EnumDNS file", "file", eDNS)
         regCount := 0
@@ -193,15 +208,15 @@ func (r *DataReader) GenerateDotFile(dotFilePath string) {
                             IP        : resultItem.IPv4,
                             Ports     : []*PortEntry{ },
                             Hostnames : []string{},
-                            Hide      : (resultItem.SaaSProduct != ""),
+                            Hide      : (!r.options.FullChart && resultItem.SaaSProduct != ""),
                         }
 
                         hostList = append(hostList, hostEntry)
-                        regCount++
                     }
 
                     if hostEntry != nil {
 
+                        regCount++
                         ptr := strings.Trim(resultItem.Ptr, ".")
                         hostName := strings.Trim(resultItem.FQDN, ".")
 
@@ -210,6 +225,8 @@ func (r *DataReader) GenerateDotFile(dotFilePath string) {
                             if !tools.SliceHasStr(hostEntry.Hostnames, ptr) {
                                 hostEntry.Hostnames = append(hostEntry.Hostnames, ptr)
                             }
+
+                            r.AddSaaS(net.ParseIP(resultItem.IPv4), ptr, &saasSubnetList)
                         }
 
                         if hostName != "" {
@@ -233,7 +250,7 @@ func (r *DataReader) GenerateDotFile(dotFilePath string) {
             }
 
         }
-        log.Infof("Imported %d hosts", regCount)
+        log.Infof("Processed %d hosts", regCount)
         
     }
 
@@ -282,10 +299,11 @@ func (r *DataReader) GenerateDotFile(dotFilePath string) {
                         }
 
                         hostList = append(hostList, hostEntry)
-                        regCount++
                     }
 
                     if hostEntry != nil {
+
+                        regCount++
 
                         if ptr != "" {
                             //No filter out PTR data   
@@ -293,8 +311,7 @@ func (r *DataReader) GenerateDotFile(dotFilePath string) {
                                 hostEntry.Hostnames = append(hostEntry.Hostnames, ptr)
                             }
 
-                            ss, _, _ := enumdns_run.ContainsSaaS(ptr)
-                            if ss {
+                            if !r.options.FullChart && r.AddSaaS(ip, ptr, &saasSubnetList) {
                                 hostEntry.Hide = true
                             }
                         }
@@ -325,7 +342,7 @@ func (r *DataReader) GenerateDotFile(dotFilePath string) {
                 }
             }
         }
-        log.Infof("Imported %d hosts", regCount)
+        log.Infof("Processed %d hosts", regCount)
     }
 
     for _, c := range r.certcrawlerFiles {
@@ -387,10 +404,11 @@ func (r *DataReader) GenerateDotFile(dotFilePath string) {
                         }
 
                         hostList = append(hostList, hostEntry)
-                        regCount++
                     }
 
                     if hostEntry != nil && portEntry != nil {
+
+                        regCount++
 
                         if host.Ptr != "" {
                             //No filter out PTR data   
@@ -398,6 +416,7 @@ func (r *DataReader) GenerateDotFile(dotFilePath string) {
                                 hostEntry.Hostnames = append(hostEntry.Hostnames, host.Ptr)
                             }
                         
+                            r.AddSaaS(net.ParseIP(host.Ip), host.Ptr, &saasSubnetList)
                         }
 
                         for _, cert := range host.Certificates {
@@ -446,7 +465,17 @@ func (r *DataReader) GenerateDotFile(dotFilePath string) {
                 }
             }
         }
-        log.Infof("Imported %d hosts", regCount)
+        log.Infof("Processed %d hosts", regCount)
+    }
+
+    saasSubnetList2 := []net.IPNet{}
+    for _, saasSubnet := range saasSubnetList {
+        n := fmt.Sprintf("%s/%d", saasSubnet.Net, saasSubnet.Mask)
+        _, subnet, err := net.ParseCIDR(n)
+        if err != nil {
+            log.Debug("Error parsing network ip", "err", err)
+        }
+        saasSubnetList2 = append(saasSubnetList2, *subnet)
     }
 
     subnetList2 := []string{}
@@ -483,9 +512,21 @@ func (r *DataReader) GenerateDotFile(dotFilePath string) {
             }
 
             for _, he := range hostList {
+                add := false
                 if subnet.Contains(net.ParseIP(he.IP)) {
-                     subnetEntry.Hosts = append(subnetEntry.Hosts, he)      
+                    add = true
+                         
                 }
+                for _, saasSubnet := range saasSubnetList2 {
+                    if saasSubnet.Contains(net.ParseIP(he.IP)) {
+                        add = false
+                    }
+                }
+
+                if add {
+                    subnetEntry.Hosts = append(subnetEntry.Hosts, he) 
+                }
+                
             }
 
             topList = append(topList, subnetEntry)
@@ -495,7 +536,12 @@ func (r *DataReader) GenerateDotFile(dotFilePath string) {
 
     hostCount := 0
     for _, subnet := range topList {
-        hostCount += len(subnet.Hosts)
+        for _, host := range subnet.Hosts {
+            if host.Hide || len(host.Ports) == 0 {
+                continue
+            }
+            hostCount++
+        }
     }
 
     log.Infof("Generating %d host nodes", hostCount)
@@ -557,7 +603,7 @@ func (r *DataReader) GenerateHostPortDotFile(dotFilePath string, topList []*Subn
         //fmt.Fprintf(f, "    client_name -> %s [fillcolor=\"#00000014\" color=\"#00000014\"]\n", subnetName)
 
         for _, host := range subnet.Hosts {
-            if host.Hide {
+            if host.Hide || len(host.Ports) == 0 {
                 continue
             }
 
@@ -574,7 +620,7 @@ func (r *DataReader) GenerateHostPortDotFile(dotFilePath string, topList []*Subn
     ipCount = 0
     for _, subnet := range topList {
         for _, host := range subnet.Hosts {
-            if host.Hide {
+            if host.Hide || len(host.Ports) == 0 {
                 continue
             }
 

@@ -144,4 +144,5 @@ func init() {
     convertCmd.Flags().StringVarP(&convertCmdFlags.toFile, "to-file", "o", "./infrachart.dot", "The file to convert to. Must be .dot extension")
 
     convertCmd.Flags().StringVarP(&opts.ChartType, "type", "t", "hosts", "Chart type. (Options: hosts, certificates)")
+    
 }

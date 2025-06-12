@@ -5,7 +5,7 @@ import (
     "strings"
 
     "github.com/helviojunior/infrachart/internal/ascii"
-    
+
     "github.com/helviojunior/infrachart/pkg/log"
     "github.com/spf13/cobra"
 )
@@ -51,4 +51,5 @@ func init() {
     rootCmd.AddCommand(reportCmd)
 
     reportCmd.PersistentFlags().StringVar(&rptFilter, "filter", "", "Comma-separated terms to filter results")
+    rootCmd.PersistentFlags().BoolVarP(&opts.FullChart, "full", "F", false, "Do not filter out SaaS addresses")
 }

@@ -8,7 +8,7 @@ require (
 	github.com/charmbracelet/log v0.4.2
 	github.com/glebarez/sqlite v1.11.0
 	github.com/helviojunior/certcrawler v0.1.17
-	github.com/helviojunior/enumdns v0.1.14
+	github.com/helviojunior/enumdns v0.1.15
 	github.com/helviojunior/gopathresolver v0.1.6
 	github.com/helviojunior/pcapraptor v0.1.5
 	github.com/lair-framework/go-nmap v0.0.0-20191202052157-3507e0b03523
