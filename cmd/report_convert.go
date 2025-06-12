@@ -15,7 +15,7 @@ import (
     "github.com/spf13/cobra"
 )
 
-var conversionCmdExtensions = []string{".sqlite", ".sqlite3", ".db"}
+var conversionCmdExtensions = []string{".sqlite", ".sqlite3", ".db", ".xml"}
 var convertCmdFlags = struct {
     fromPath        string
     fromPathType    string

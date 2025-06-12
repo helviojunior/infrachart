@@ -28,6 +28,16 @@ func SliceHasInt(slice []int, item int) bool {
 	return false
 }
 
+// SliceHasInt checks if a slice has an int
+func SliceHasUInt(slice []uint, item uint) bool {
+	for _, s := range slice {
+		if s == item {
+			return true
+		}
+	}
+
+	return false
+}
 
 // SliceHasInt checks if a slice has an int
 func SliceHasUInt16(slice []uint16, item uint16) bool {

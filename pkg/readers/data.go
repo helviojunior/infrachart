@@ -5,19 +5,21 @@ import (
     "net"
     "os"
     "strings"
+    "path/filepath"
 
     "github.com/helviojunior/infrachart/internal/tools"
     "github.com/helviojunior/infrachart/pkg/log"
     "github.com/helviojunior/infrachart/pkg/database"
     resolver "github.com/helviojunior/gopathresolver"
 
-    //enumdns_db "github.com/helviojunior/enumdns/pkg/database"
+    enumdns_run "github.com/helviojunior/enumdns/pkg/runner"
     enumdns_models "github.com/helviojunior/enumdns/pkg/models"
 
     certcrawler_models "github.com/helviojunior/certcrawler/pkg/models"
 
     netcalc "github.com/helviojunior/pcapraptor/pkg/netcalc"
 
+    "github.com/lair-framework/go-nmap"
     "database/sql"
     "gorm.io/gorm/clause"
 )
@@ -82,9 +84,11 @@ type DataReader struct {
     //EnumDNS database files
     enumdnsFiles []string
 
-    //EnumDNS database files
+    //Cert Crawler database files
     certcrawlerFiles []string
 
+    //NMAP database files
+    nmapFiles []string
 }
 
 func NewDataReader(rootNode string, opts Options) (*DataReader, error) {
@@ -101,22 +105,34 @@ func (r *DataReader) AddDatabase(filePath string) error {
         return err
     }
 
-    conn, err := database.Connection("sqlite:///"+ file, false, r.options.Logging.DebugDb)
-    if err != nil {
-        return err
-    }
+    if strings.ToLower(filepath.Ext(filePath)) == ".xml" {
+        _, err := r.getNmapXML(filePath)
+        if err != nil {
+            return err
+        }
 
-    appName := database.GetDbApplication(conn)
+        //OK is an valid NMAP XML
+        r.nmapFiles = append(r.nmapFiles, filePath)
 
-    switch appName {
-    case "enumdns":
-        r.enumdnsFiles = append(r.enumdnsFiles, filePath)
-    case "certcrawler":
-        r.certcrawlerFiles = append(r.certcrawlerFiles, filePath)
-    case "":
-        log.Debug("Invalid database", "file", filePath, "err", "application_info table does not exists or is empty")
-    default:
-        log.Debug("Invalid database", "file", filePath, "application", appName, "err", "Unknown application")
+    }else{
+
+        conn, err := database.Connection("sqlite:///"+ file, false, r.options.Logging.DebugDb)
+        if err != nil {
+            return err
+        }
+
+        appName := database.GetDbApplication(conn)
+
+        switch appName {
+        case "enumdns":
+            r.enumdnsFiles = append(r.enumdnsFiles, filePath)
+        case "certcrawler":
+            r.certcrawlerFiles = append(r.certcrawlerFiles, filePath)
+        case "":
+            log.Debug("Invalid database", "file", filePath, "err", "application_info table does not exists or is empty")
+        default:
+            log.Debug("Invalid database", "file", filePath, "application", appName, "err", "Unknown application")
+        }
     }
 
     return nil
@@ -136,6 +152,8 @@ func (r *DataReader) GenerateDotFile(dotFilePath string) {
 
     
     for _, eDNS := range r.enumdnsFiles {
+        log.Info("Reading EnumDNS file", "file", eDNS)
+        regCount := 0
         conn, err := database.Connection(fmt.Sprintf("sqlite:///%s", eDNS), true, false)
         if err == nil {
             defer database.CloseDB(conn)
@@ -179,6 +197,7 @@ func (r *DataReader) GenerateDotFile(dotFilePath string) {
                         }
 
                         hostList = append(hostList, hostEntry)
+                        regCount++
                     }
 
                     if hostEntry != nil {
@@ -214,11 +233,104 @@ func (r *DataReader) GenerateDotFile(dotFilePath string) {
             }
 
         }
+        log.Infof("Imported %d hosts", regCount)
         
     }
 
+    for _, nmap := range r.nmapFiles {
+        log.Info("Reading NMAP file", "file", nmap)
+        regCount := 0
+        nmapXML, err := r.getNmapXML(nmap)
+        if err == nil {
+            for _, host := range nmapXML.Hosts {
+                var hostEntry *HostEntry
+                var portEntry *PortEntry
+
+                ptr := ""
+                for _, hostName := range host.Hostnames {
+                    if strings.ToLower(hostName.Type) == "ptr" && hostName.Name != "" {
+                        ptr = strings.Trim(strings.ToLower(hostName.Name), " ")
+                    }
+                }
+
+                for _, address := range host.Addresses {
+                    if !tools.SliceHasStr([]string{"ipv4", "ipv6"}, address.AddrType) {
+                        continue
+                    }
+
+                    ip := net.ParseIP(address.Addr)
+                    if ip == nil {
+                        log.Debugf("Invalid IP (%s)", address.Addr)
+                        continue
+                    }
+
+                    netcalc.AddSlice(&subnetList, netcalc.NewSubnetFromIPMask(ip, 32))
+        
+                    for _, he := range hostList {
+                        if hostEntry == nil && he.IP == address.Addr {
+                            hostEntry = he
+                        }
+                    }
+                    
+                    if hostEntry == nil {
+
+                        hostEntry = &HostEntry{
+                            IP        : address.Addr,
+                            Ports     : []*PortEntry{ },
+                            Hostnames : []string{},
+                            Hide      : false,
+                        }
+
+                        hostList = append(hostList, hostEntry)
+                        regCount++
+                    }
+
+                    if hostEntry != nil {
+
+                        if ptr != "" {
+                            //No filter out PTR data   
+                            if !tools.SliceHasStr(hostEntry.Hostnames, ptr) {
+                                hostEntry.Hostnames = append(hostEntry.Hostnames, ptr)
+                            }
+
+                            ss, _, _ := enumdns_run.ContainsSaaS(ptr)
+                            if ss {
+                                hostEntry.Hide = true
+                            }
+                        }
+
+                        for _, port := range host.Ports {
+                            // filter only open ports
+                            if port.State.State != "open" {
+                                continue
+                            }
+
+                            // apply the port filter if it exists
+                            if !IsTopPort(uint(port.PortId)) {
+                                continue
+                            }
+
+                            portEntry = &PortEntry{
+                                Port     : uint(port.PortId),
+                                Certs    : []Cert{},
+                            }
+
+                            hostEntry.Ports = append(hostEntry.Ports, portEntry)
+
+                        }
+
+                    }
+
+                
+                }
+            }
+        }
+        log.Infof("Imported %d hosts", regCount)
+    }
 
     for _, c := range r.certcrawlerFiles {
+        log.Info("Reading CertCrawler file", "file", c)
+        regCount := 0
         conn, err := database.Connection(fmt.Sprintf("sqlite:///%s", c), true, false)
         if err == nil {
             defer database.CloseDB(conn)
@@ -271,9 +383,11 @@ func (r *DataReader) GenerateDotFile(dotFilePath string) {
                             IP        : host.Ip,
                             Ports     : []*PortEntry{ portEntry, },
                             Hostnames : []string{},
+                            Hide      : false,
                         }
 
                         hostList = append(hostList, hostEntry)
+                        regCount++
                     }
 
                     if hostEntry != nil && portEntry != nil {
@@ -332,7 +446,7 @@ func (r *DataReader) GenerateDotFile(dotFilePath string) {
                 }
             }
         }
-        
+        log.Infof("Imported %d hosts", regCount)
     }
 
     subnetList2 := []string{}
@@ -657,6 +771,38 @@ func (r *DataReader) GetCertificates() []Cert {
     return certificates
 }
 
+func (r *DataReader) getNmapXML(filePath string) (*nmap.NmapRun, error) {
+    xml, err := os.ReadFile(filePath)
+    if err != nil {
+        return nil, err
+    }
+
+    nmapXML, err := nmap.Parse(xml)
+    if err != nil {
+        if len(xml) < 1024 {
+            return nil, err
+        }
+
+        log.Warn("XML data is broken, trying to solve that...", "err", err)
+
+        // Check if we can solve the most common issue
+        var err2 error
+        newText := string(xml[len(xml)-1024:])
+        if strings.Contains(newText, "<runstats") && !strings.Contains(newText, "</runstats>") {
+            xml = append(xml, []byte("</runstats>")...)
+        } 
+        if !strings.Contains(newText, "</nmaprun>") {
+            xml =  append(xml, []byte("</nmaprun>")...)
+        } 
+        nmapXML, err2 = nmap.Parse(xml)
+        if err2 != nil {
+            return nil, err //Return original error
+        }
+        log.Warn("Issue resolved: XML data has been successfully repaired and loaded.")
+    }
+
+    return nmapXML, nil
+}
 
 func (r *DataReader) prepareSQL(fields []string) string {
     sql := ""
