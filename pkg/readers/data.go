@@ -652,6 +652,7 @@ func (r *DataReader) GenerateDotFile(dotFilePath string) error {
                     //log.Debug("Host ignored: identified as SaaS address.", "ip", he.IP)
                 }
 
+                log.Debug("Host", "ip", he.IP, "is_valid", isValid, "ports", len(he.Ports))
                 if isValid {
                     if firstWindowsNode == nil {
                         firstWindowsNode = he
@@ -687,7 +688,7 @@ func (r *DataReader) GenerateDotFile(dotFilePath string) error {
     hostCount := 0
     for _, subnet := range topList {
         for _, host := range subnet.Hosts {
-            if host.Hide || len(host.Ports) == 0 {
+            if host.Hide || (len(host.Ports) == 0 && !r.options.FullChart) {
                 continue
             }
             hostCount++
@@ -718,26 +719,29 @@ func (r *DataReader) GenerateDotFile(dotFilePath string) error {
 }
 
 func (r *DataReader) CheckHostEntry(host *models.HostEntry, sassSubnets []net.IPNet) (bool, bool) { // return is_valid and is_sass
-    if len(host.Ports) == 0 {
+    if len(host.Ports) == 0 && !r.options.FullChart {
         return false, false
     }
 
     // Filter out port list
     tmpList := []*models.PortEntry{}
-    for _, pt := range host.Ports {
-        if (len(r.options.Ports) == 0 || tools.SliceHasUInt(r.options.Ports, pt.Port)) {
-            if !r.options.CertOnly || (r.options.CertOnly && len(pt.Certs) > 0) {
-                tmpList = append(tmpList, pt)
+
+    if len(host.Ports) > 0 {
+        for _, pt := range host.Ports {
+            if (len(r.options.Ports) == 0 || tools.SliceHasUInt(r.options.Ports, pt.Port)) {
+                if !r.options.CertOnly || (r.options.CertOnly && len(pt.Certs) > 0) {
+                    tmpList = append(tmpList, pt)
+                }
             }
         }
-    }
-    if len(tmpList) == 0 {
-        if len(host.Ports) > 0 { 
-            log.Debug("Host ignored: Open port(s) filtered out by port filter.", "ip", host.IP)
+        if len(tmpList) == 0 {
+            if len(host.Ports) > 0 { 
+                log.Debug("Host ignored: Open port(s) filtered out by port filter.", "ip", host.IP)
+            }
+            return false, false
         }
-        return false, false
+        host.Ports = tmpList
     }
-    host.Ports = tmpList
 
     hasSaas := false
     if !r.options.FullChart {
@@ -774,10 +778,13 @@ func (r *DataReader) CalcSize(topList []*models.SubnetEntry) int {
     nodesCount := 0
     for _, subnet := range topList {
         for _, host := range subnet.Hosts {
-            if host.Hide || len(host.Ports) == 0 {
+            if host.Hide {
                 continue
             }
             nodesCount += 1 + len(host.Ports)
+            if len(host.Hostnames) > 0 {
+                nodesCount++
+            }
         }
     }
 
@@ -836,7 +843,7 @@ func (r *DataReader) GenerateHostPortDotFile(dotFilePath string, topList []*mode
         //fmt.Fprintf(f, "    client_name -> %s [fillcolor=\"#00000014\" color=\"#00000014\"]\n", subnetName)
 
         for _, host := range subnet.Hosts {
-            if host.Hide || len(host.Ports) == 0 {
+            if host.Hide || (len(host.Ports) == 0 && !r.options.FullChart) {
                 continue
             }
 
@@ -857,7 +864,7 @@ func (r *DataReader) GenerateHostPortDotFile(dotFilePath string, topList []*mode
     ipCount = 0
     for _, subnet := range topList {
         for _, host := range subnet.Hosts {
-            if host.Hide || len(host.Ports) == 0 {
+            if host.Hide || (len(host.Ports) == 0 && !r.options.FullChart) {
                 continue
             }
 
