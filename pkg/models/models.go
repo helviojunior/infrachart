@@ -60,12 +60,15 @@ func (net *SubnetEntry) Hash() string {
 }
 
 type HostEntry struct {
-	Name      string
-	Source    string
-    IP        net.IP
-    Hostnames []string
-    Ports     []*PortEntry
-    Hide      bool
+	Name        string
+	Source      string
+    IP          net.IP
+    Datacenter  string
+    SaaS        string
+    Cloud       string
+    Hostnames   []string
+    Ports       []*PortEntry
+    Hide        bool
 }
 
 func (host *HostEntry) String() string {

@@ -86,21 +86,6 @@ func (r *DataReader) AddDatabase(filePath string) error {
     return nil
 }
 
-func (r *DataReader) AddSaaS(ip net.IP, name string, saasSubnetList *[]netcalc.SubnetData) bool{
-
-    if r.options.FullChart {
-        return false
-    }
-
-    ss, _, _ := enumdns_run.ContainsSaaS(name)
-    if ss {
-       netcalc.AddSlice(saasSubnetList, netcalc.NewSubnetFromIPMask(ip, 24))
-       return true
-    }
-
-    return false
-}
-
 func (r *DataReader) GenerateDotFile(dotFilePath string) error {
     //
     //certificates := r.GetCertificates()
@@ -172,6 +157,8 @@ func (r *DataReader) GenerateDotFile(dotFilePath string) error {
                 regCount++
                 ptr := strings.Trim(resultItem.Ptr, ".")
                 hostName := strings.Trim(resultItem.FQDN, ".")
+
+                r.CheckProductsInfo(hostEntry, ptr, hostName)
 
                 if ptr != "" {
                     //No filter out PTR data   
@@ -252,6 +239,7 @@ func (r *DataReader) GenerateDotFile(dotFilePath string) error {
                             hostEntry.Source = "NMAP"
                         }
 
+                        r.CheckProductsInfo(hostEntry, host.Hostnames)
                     }
 
                     if hostEntry != nil {
@@ -508,6 +496,9 @@ func (r *DataReader) GenerateDotFile(dotFilePath string) error {
                 regCount++
 
                 if host.Ptr != "" {
+
+                    r.CheckProductsInfo(hostEntry, host.Ptr)
+
                     //No filter out PTR data   
                     if !tools.SliceHasStr(hostEntry.Hostnames, host.Ptr) {
                         hostEntry.Hostnames = append(hostEntry.Hostnames, host.Ptr)
@@ -519,6 +510,7 @@ func (r *DataReader) GenerateDotFile(dotFilePath string) error {
                 for _, cert := range host.Certificates {
                     if !cert.IsCA || (cert.SelfSigned && len(host.Certificates) == 1) {
                         ins := false
+                        r.CheckProductsInfo(hostEntry, cert.Subject, cert.Names)
                         if len(r.options.FilterList) > 0 {
                             for _, f := range r.options.FilterList {
                                 if strings.Contains(cert.Subject, f) {
@@ -709,13 +701,76 @@ func (r *DataReader) GenerateDotFile(dotFilePath string) error {
 
     switch strings.ToLower(r.options.ChartType){
         case "hosts":
-            r.GenerateHostPortDotFile(dotFilePath, topList, false)
+            r.GenerateHostPortDotFile(dotFilePath, topList)
         case "certificates":
             r.GenerateCertificatesDotFile(dotFilePath, topList)
     }
 
     return nil
 
+}
+
+
+func (r *DataReader) AddSaaS(ip net.IP, name string, saasSubnetList *[]netcalc.SubnetData) bool{
+
+    if r.options.FullChart {
+        return false
+    }
+
+    ss, _, _ := enumdns_run.ContainsSaaS(name)
+    if ss {
+       netcalc.AddSlice(saasSubnetList, netcalc.NewSubnetFromIPMask(ip, 24))
+       return true
+    }
+
+    return false
+}
+
+
+func (r *DataReader) CheckProductsInfo(host *models.HostEntry, keyvals ...interface{}) { 
+    for _, v := range keyvals {
+        if dt, ok := v.(string); ok {
+            if host.SaaS == "" {
+                ss, prodName, _ := enumdns_run.ContainsSaaS(dt)
+                if ss {
+                   host.SaaS = prodName
+                }
+            }
+            if host.Cloud == "" {
+                ss, prodName, _ := enumdns_run.ContainsCloudProduct(dt)
+                if ss {
+                   host.Cloud = prodName
+                }
+            }
+            if host.Datacenter == "" {
+                ss, prodName, _ := enumdns_run.ContainsDatacenter(dt)
+                if ss {
+                   host.Datacenter = prodName
+                }
+            }
+        }else if dtList, ok := v.([]string); ok {
+            for _, dt := range dtList {
+                if host.SaaS == "" {
+                    ss, prodName, _ := enumdns_run.ContainsSaaS(dt)
+                    if ss {
+                       host.SaaS = prodName
+                    }
+                }
+                if host.Cloud == "" {
+                    ss, prodName, _ := enumdns_run.ContainsCloudProduct(dt)
+                    if ss {
+                       host.Cloud = prodName
+                    }
+                }
+                if host.Datacenter == "" {
+                    ss, prodName, _ := enumdns_run.ContainsDatacenter(dt)
+                    if ss {
+                       host.Datacenter = prodName
+                    }
+                }
+            }
+        }
+    }
 }
 
 func (r *DataReader) CheckHostEntry(host *models.HostEntry, sassSubnets []net.IPNet) (bool, bool) { // return is_valid and is_sass
@@ -781,9 +836,17 @@ func (r *DataReader) CalcSize(topList []*models.SubnetEntry) int {
             if host.Hide {
                 continue
             }
-            nodesCount += 1 + len(host.Ports)
+            if r.options.Summarize {
+                nodesCount += 1 + 2
+            }else {
+                nodesCount += 1 + len(host.Ports)
+            }
             if len(host.Hostnames) > 0 {
-                nodesCount++
+                hnCount := len(host.Hostnames)/4
+                if hnCount < 1 {
+                    hnCount = 1
+                }
+                nodesCount += hnCount
             }
         }
     }
@@ -806,7 +869,7 @@ func (r *DataReader) CalcSize(topList []*models.SubnetEntry) int {
     return size
 }
 
-func (r *DataReader) GenerateHostPortDotFile(dotFilePath string, topList []*models.SubnetEntry, sumarizePorts bool) {
+func (r *DataReader) GenerateHostPortDotFile(dotFilePath string, topList []*models.SubnetEntry) {
 
     f, _ := os.Create(dotFilePath)
     defer f.Close()
@@ -839,12 +902,17 @@ func (r *DataReader) GenerateHostPortDotFile(dotFilePath string, topList []*mode
 
         subnetName := fmt.Sprintf("subnet_%d", i)
 
-        fmt.Fprintf(f, "    \"%s\" [shape=signature color=\"#445383\" fillcolor=\"#708bce\" label=\"%s\"]\n", subnetName, subnet.Subnet)
+        fmt.Fprintf(f, "    \"%s\" [shape=signature color=\"#445383\" fillcolor=\"#8ba0dc\" label=\"%s\"]\n", subnetName, subnet.Subnet)
         //fmt.Fprintf(f, "    client_name -> %s [fillcolor=\"#00000014\" color=\"#00000014\"]\n", subnetName)
 
+        dcName := ""
         for _, host := range subnet.Hosts {
             if host.Hide || (len(host.Ports) == 0 && !r.options.FullChart) {
                 continue
+            }
+
+            if dcName == "" && host.Datacenter != "" {
+                dcName = host.Datacenter
             }
 
             nName := host.Name
@@ -856,7 +924,13 @@ func (r *DataReader) GenerateHostPortDotFile(dotFilePath string, topList []*mode
             fmt.Fprintf(f, "    %s -> \"%s\" [label=\"\" color=\"#999999\" weight=100]\n", subnetName, ipNode)
             ipCount++
         
+        }
 
+        if dcName != "" {
+            dcNode := fmt.Sprintf("%s_dc", subnetName)
+
+            fmt.Fprintf(f, "    \"%s\" [shape=box3d fillcolor=\"#d8adad\" color=\"#7d3e3f\" label=\"%s\"]\n", dcNode, dcName)
+            fmt.Fprintf(f, "    %s -> \"%s\" [label=\"datacenter\" color=\"#d8adad\" weight=90]\n", dcNode, subnetName)
         }
         
     }
@@ -877,19 +951,42 @@ func (r *DataReader) GenerateHostPortDotFile(dotFilePath string, topList []*mode
                     strNames = append(strNames, hn)
                 }
                 fmt.Fprintf(f, "    \"%s\" [shape=folder fillcolor=\"#71bbc1\" label=\"%s\"]\n", hnNode, strings.Join(strNames, "\n"))
-                fmt.Fprintf(f, "    %s -> \"%s\" [label=\"hostname\" color=\"#999999\" weight=90]\n", ipNode, hnNode)
+                fmt.Fprintf(f, "    %s -> \"%s\" [label=\"\" color=\"#71bbc1\" weight=90]\n", hnNode, ipNode)
             }
 
-            if sumarizePorts {
+            if r.options.Summarize {
                 strP := []string{}
+                strCert := []string{}
                 for _, port := range host.Ports {
                     strP = append(strP, fmt.Sprintf("%d", port.Port))
+
+                    for _, cert := range port.Certs {
+                        
+                        if !tools.SliceHasStr(strCert, cert.CN) {
+                            strCert = append(strCert, cert.CN)
+                        }
+                        for _, alt := range cert.AlternateNames {
+                            if !tools.SliceHasStr(strCert, alt) {
+                                strCert = append(strCert, alt)
+                            }
+                        }
+                    }
+
                 }
 
                 portNode := fmt.Sprintf("%s_p%d", ipNode, "all")
 
-                fmt.Fprintf(f, "    \"%s\" [shape=oval label=\"%s\" fillcolor=\"#b2df8a\"]\n", portNode, strings.Join(strP, ", "))
-                fmt.Fprintf(f, "    %s -> \"%s\" [label=\"\" color=\"#33a02c\" weight=20]\n", ipNode, portNode)
+                if len(strP) > 0 {
+                    fmt.Fprintf(f, "    \"%s\" [shape=oval label=\"%s\" fillcolor=\"#b2df8a\"]\n", portNode, strings.Join(strP, ", "))
+                    fmt.Fprintf(f, "    %s -> \"%s\" [label=\"\" color=\"#33a02c\" weight=20]\n", ipNode, portNode)
+                }
+
+                if len(strCert) > 0 {
+                    certNode := fmt.Sprintf("%s_certs", portNode) 
+                    fmt.Fprintf(f, "    \"%s\" [label=\"%s\" shape=note fillcolor=\"#cab2d6\"]\n", certNode, strings.Join(strCert, "\n"))
+                    fmt.Fprintf(f, "    \"%s\" -> \"%s\" [label=\"cert\" color=\"#6a3d9a\" weight=30]\n", ipNode, certNode)
+                }
+
             }else{
                 for _, port := range host.Ports {
                     portNode := fmt.Sprintf("%s_p%d", ipNode, port.Port)

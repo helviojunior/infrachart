@@ -22,6 +22,8 @@ type Options struct {
 
     CertOnly bool
 
+    Summarize bool
+
     Ports []uint
 }
 

@@ -270,5 +270,6 @@ func init() {
     convertCmd.Flags().IntVar(&topPorts, "top-ports", 0, "Show <number> most common ports")
     
     convertCmd.PersistentFlags().BoolVar(&opts.CertOnly, "cert-only", false, "Show only host/port with digital certificates")
+    convertCmd.PersistentFlags().BoolVarP(&opts.Summarize, "summarize", "S", false, "Aggregate all host ports and certificates into one unified node")
     
 }
