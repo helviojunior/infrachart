@@ -149,6 +149,10 @@ func (r *DataReader) GenerateDotFile(dotFilePath string) error {
                     hostEntry.Source = "EnumDNS"
                 }
 
+                if resultItem.DC {
+                    hostEntry.AD = "Domain Controller"
+                }
+
                 hostList = append(hostList, hostEntry)
             }
 
@@ -272,6 +276,10 @@ func (r *DataReader) GenerateDotFile(dotFilePath string) error {
                             portEntry = &models.PortEntry{
                                 Port     : uint(port.PortId),
                                 Certs    : []models.Cert{},
+                            }
+
+                            if port.Service.Name == "kerberos-sec" && hostEntry.AD == ""{
+                                hostEntry.AD = "Domain Controller"
                             }
 
                             // Check certificates
@@ -902,8 +910,10 @@ func (r *DataReader) GenerateHostPortDotFile(dotFilePath string, topList []*mode
 
         subnetName := fmt.Sprintf("subnet_%d", i)
 
-        fmt.Fprintf(f, "    \"%s\" [shape=signature color=\"#445383\" fillcolor=\"#8ba0dc\" label=\"%s\"]\n", subnetName, subnet.Subnet)
-        //fmt.Fprintf(f, "    client_name -> %s [fillcolor=\"#00000014\" color=\"#00000014\"]\n", subnetName)
+        if !r.options.NoSubnet {
+            fmt.Fprintf(f, "    \"%s\" [shape=signature color=\"#445383\" fillcolor=\"#8ba0dc\" label=\"%s\"]\n", subnetName, subnet.Subnet)
+            //fmt.Fprintf(f, "    client_name -> %s [fillcolor=\"#00000014\" color=\"#00000014\"]\n", subnetName)
+        }
 
         dcName := ""
         for _, host := range subnet.Hosts {
@@ -921,7 +931,9 @@ func (r *DataReader) GenerateHostPortDotFile(dotFilePath string, topList []*mode
             }
             ipNode := fmt.Sprintf("ip_%d", ipCount)
             fmt.Fprintf(f, "    %s [ shape=box label=\"%s\" ];\n", ipNode, nName)
-            fmt.Fprintf(f, "    %s -> \"%s\" [label=\"\" color=\"#999999\" weight=100]\n", subnetName, ipNode)
+            if !r.options.NoSubnet {
+                fmt.Fprintf(f, "    %s -> \"%s\" [label=\"\" color=\"#999999\" weight=100]\n", subnetName, ipNode)
+            }
             ipCount++
         
         }
@@ -952,6 +964,13 @@ func (r *DataReader) GenerateHostPortDotFile(dotFilePath string, topList []*mode
                 }
                 fmt.Fprintf(f, "    \"%s\" [shape=folder fillcolor=\"#71bbc1\" label=\"%s\"]\n", hnNode, strings.Join(strNames, "\n"))
                 fmt.Fprintf(f, "    %s -> \"%s\" [label=\"\" color=\"#71bbc1\" weight=90]\n", hnNode, ipNode)
+            }
+
+            if host.AD != "" {
+                adNode := fmt.Sprintf("%s_ad", ipNode)
+
+                fmt.Fprintf(f, "    \"%s\" [shape=box3d fillcolor=\"#d8adad\" color=\"#7d3e3f\" label=\"%s\"]\n", adNode, host.AD)
+                fmt.Fprintf(f, "    %s -> \"%s\" [label=\"\" color=\"#71bbc1\" weight=90]\n", adNode, ipNode)
             }
 
             if r.options.Summarize {

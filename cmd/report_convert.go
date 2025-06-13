@@ -272,4 +272,5 @@ func init() {
     convertCmd.PersistentFlags().BoolVar(&opts.CertOnly, "cert-only", false, "Show only host/port with digital certificates")
     convertCmd.PersistentFlags().BoolVarP(&opts.Summarize, "summarize", "S", false, "Aggregate all host ports and certificates into one unified node")
     
+    convertCmd.PersistentFlags().BoolVar(&opts.NoSubnet, "no-subnet-aggregation", false, "No agregate hosts by subnet")
 }

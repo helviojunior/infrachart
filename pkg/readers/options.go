@@ -25,6 +25,8 @@ type Options struct {
     Summarize bool
 
     Ports []uint
+
+    NoSubnet bool
 }
 
 // Logging is log related options

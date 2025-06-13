@@ -66,6 +66,7 @@ type HostEntry struct {
     Datacenter  string
     SaaS        string
     Cloud       string
+    AD          string
     Hostnames   []string
     Ports       []*PortEntry
     Hide        bool
