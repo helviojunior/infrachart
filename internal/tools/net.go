@@ -20,6 +20,10 @@ func IpToUint32(ip net.IP) uint32 {
     return binary.BigEndian.Uint32(ip)
 }
 
+func SubnetToUint32(subNet net.IPNet) uint32 {
+	return IpToUint32(subNet.IP)
+}
+
 func ParseCertificatePEM(pemData string) (*x509.Certificate, error) {
 	pemData = normalizePEM(pemData)
 	block, _ := pem.Decode([]byte(pemData))

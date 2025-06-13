@@ -579,7 +579,19 @@ func (r *DataReader) GenerateDotFile(dotFilePath string) error {
 
     // Add all host IPs to list
     for _, host := range hostList {
-        netcalc.AddSlice(&subnetList, netcalc.NewSubnetFromIPMask(host.IP, 32))
+        add := false
+        if len(r.options.SubnetFilterList) > 0 {
+            for _, f := range r.options.SubnetFilterList {
+                if f.Contains(host.IP) {
+                    add = true
+                }
+            }
+        }else{
+            add = true
+        }
+        if add {
+            netcalc.AddSlice(&subnetList, netcalc.NewSubnetFromIPMask(host.IP, 32))
+        }
     }
 
     saasSubnetList2 := []net.IPNet{}

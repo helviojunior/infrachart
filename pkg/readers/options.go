@@ -2,6 +2,7 @@ package readers
 
 import (
     //"net/url"
+    "net"
 )
 
 // Options are global github.com/helviojunior/infrachartinfrachart options
@@ -10,6 +11,8 @@ type Options struct {
     Logging Logging
     
     FilterList []string
+
+    SubnetFilterList []net.IPNet
 
     ChartType string
 
