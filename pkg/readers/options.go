@@ -24,9 +24,12 @@ type Options struct {
 
     Summarize bool
 
+    NoSubnet bool
+
     Ports []uint
 
-    NoSubnet bool
+    // Use Port filter just to filter hosts, but show all host ports to chart
+    ShowPorts bool
 }
 
 // Logging is log related options

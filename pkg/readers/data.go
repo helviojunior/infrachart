@@ -268,11 +268,6 @@ func (r *DataReader) GenerateDotFile(dotFilePath string) error {
                                 continue
                             }
 
-                            // apply the port filter if it exists
-                            if len(r.options.Ports) > 0 && !tools.SliceHasUInt(r.options.Ports, uint(port.PortId)) {
-                                continue
-                            }
-
                             portEntry = &models.PortEntry{
                                 Port     : uint(port.PortId),
                                 Certs    : []models.Cert{},
@@ -328,6 +323,8 @@ func (r *DataReader) GenerateDotFile(dotFilePath string) error {
                                     if certPem != "" {
                                         crt, err := tools.ParseCertificatePEM(certPem)
                                         if err == nil {
+
+                                            newCrt.SelfSigned = tools.IsSelfSigned(crt)
 
                                             newCrt.CN = tools.FormatCN(crt.Subject.String())
                                             newCrt.ID = tools.GetHash(crt.Signature)
@@ -538,8 +535,10 @@ func (r *DataReader) GenerateDotFile(dotFilePath string) error {
                             newCrt := models.Cert{
                                 ID        : cert.Hash,
                                 CN        : tools.FormatCN(cert.Subject),
+                                SelfSigned: cert.SelfSigned,
                                 AlternateNames : []string{},
                             }
+                            
                             for _, alt := range cert.Names {
                                 if len(r.options.FilterList) > 0 {
                                     for _, f := range r.options.FilterList {
@@ -803,7 +802,9 @@ func (r *DataReader) CheckHostEntry(host *models.HostEntry, sassSubnets []net.IP
             }
             return false, false
         }
-        host.Ports = tmpList
+        if !r.options.ShowPorts {
+            host.Ports = tmpList
+        }
     }
 
     hasSaas := false
@@ -1019,7 +1020,11 @@ func (r *DataReader) GenerateHostPortDotFile(dotFilePath string, topList []*mode
                     } else {
                         strCert := []string{}
                         for _, cert := range port.Certs {
-                            strCert = append(strCert, cert.CN)
+                            n := cert.CN
+                            if cert.SelfSigned {
+                                n += " (Self Signed)"
+                            }
+                            strCert = append(strCert, n)
                             for _, alt := range cert.AlternateNames {
                                 strCert = append(strCert, alt)
                             }

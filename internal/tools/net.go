@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+    "bytes"
 )
 
 func IpToUint32(ip net.IP) uint32 {
@@ -49,4 +50,16 @@ func normalizePEM(input string) string {
 		return strings.TrimSuffix(line, "\n") // remove newline
 	})
 	return strings.TrimPrefix(txt, "\n")
+}
+
+// IsSelfSigned checks if a certificate is self-signed
+func IsSelfSigned(cert *x509.Certificate) bool {
+    // Check if subject and issuer are equal
+    if !bytes.Equal(cert.RawSubject, cert.RawIssuer) {
+        return false
+    }
+
+    // Try to verify the certificate with its own public key
+    err := cert.CheckSignatureFrom(cert)
+    return err == nil
 }

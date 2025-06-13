@@ -22,6 +22,7 @@ func (e NoDataError) Error() string {
 type Cert struct {
     ID string
     CN string
+    SelfSigned bool
     AlternateNames []string
 }
 

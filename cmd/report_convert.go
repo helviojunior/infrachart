@@ -260,14 +260,15 @@ target.`)),
 func init() {
     reportCmd.AddCommand(convertCmd)
 
-    convertCmd.Flags().StringSliceVarP(&tmpFromPaths, "from-path", "P", []string{}, "The file(s) or directory(ies) to convert from. You can specify multiple values by repeating the flag.")
+    convertCmd.PersistentFlags().StringSliceVarP(&tmpFromPaths, "from-path", "P", []string{}, "The file(s) or directory(ies) to convert from. You can specify multiple values by repeating the flag.")
 
-    convertCmd.Flags().StringVarP(&convertCmdFlags.toFile, "to-file", "o", "./infrachart.dot", "The file to convert to. Must be .dot extension")
+    convertCmd.PersistentFlags().StringVarP(&convertCmdFlags.toFile, "to-file", "o", "./infrachart.dot", "The file to convert to. Must be .dot extension")
 
-    convertCmd.Flags().StringVarP(&opts.ChartType, "type", "t", "hosts", "Chart type. (Options: hosts, certificates)")
+    convertCmd.PersistentFlags().StringVarP(&opts.ChartType, "type", "t", "hosts", "Chart type. (Options: hosts, certificates)")
     
-    convertCmd.Flags().StringVarP(&tmpPort, "port", "p", "", "Only show specified ports. (Ex: -p22; -p1-65535; -p 53,111,137,21-25,80,139,8080)")
-    convertCmd.Flags().IntVar(&topPorts, "top-ports", 0, "Show <number> most common ports")
+    convertCmd.PersistentFlags().StringVarP(&tmpPort, "port", "p", "", "Only show specified ports. (Ex: -p22; -p1-65535; -p 53,111,137,21-25,80,139,8080)")
+    convertCmd.PersistentFlags().IntVar(&topPorts, "top-ports", 0, "Show <number> most common ports")
+    convertCmd.PersistentFlags().BoolVar(&opts.ShowPorts, "show-all-ports", false, "Filters --port and --top-port are applied solely for host selection and do not affect the ports displayed in the chart")
     
     convertCmd.PersistentFlags().BoolVar(&opts.CertOnly, "cert-only", false, "Show only host/port with digital certificates")
     convertCmd.PersistentFlags().BoolVarP(&opts.Summarize, "summarize", "S", false, "Aggregate all host ports and certificates into one unified node")
