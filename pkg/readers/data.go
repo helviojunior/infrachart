@@ -768,26 +768,43 @@ func (r *DataReader) CheckHostEntry(host *models.HostEntry, sassSubnets []net.IP
     return !hasSaas, hasSaas
 }
 
+func (r *DataReader) CalcSize(topList []*models.SubnetEntry) int {
+
+    size := 29
+    nodesCount := 0
+    for _, subnet := range topList {
+        for _, host := range subnet.Hosts {
+            if host.Hide || len(host.Ports) == 0 {
+                continue
+            }
+            nodesCount += 1 + len(host.Ports)
+        }
+    }
+
+    size = int(float32(nodesCount) * 0.25)
+
+    if size < 65 {
+        if nodesCount < 50 {
+            size = 29
+        }else{
+            size = 65
+        }
+    }
+    if size > 128 {
+        size = 128
+    }
+
+    log.Debugf("Calculated size to %d nodes: %d inches", nodesCount, size)
+
+    return size
+}
+
 func (r *DataReader) GenerateHostPortDotFile(dotFilePath string, topList []*models.SubnetEntry, sumarizePorts bool) {
 
     f, _ := os.Create(dotFilePath)
     defer f.Close()
 
-
-    hostCount := 0
-    for _, subnet := range topList {
-        hostCount += len(subnet.Hosts)
-    }
-
-    // Size in Inches
-    size := int(hostCount/4)
-
-    if size < 29 {
-        size = 29
-    }
-    if size > 128 {
-        size = 128
-    }
+    size := r.CalcSize(topList)
 
     fmt.Fprintln(f, "strict digraph {")
     fmt.Fprintln(f, "    layout=twopi;")
@@ -911,21 +928,7 @@ func (r *DataReader) GenerateCertificatesDotFile(dotFilePath string, topList []*
     f, _ := os.Create(dotFilePath)
     defer f.Close()
 
-    hostCount := 0
-    for _, subnet := range topList {
-        hostCount += len(subnet.Hosts)
-    }
-
-    // Size in Inches
-    size := int(hostCount/7)
-
-    if size < 29 {
-        size = 29
-    }
-    if size > 128 {
-        size = 128
-    }
-
+    size := r.CalcSize(topList)
 
     fmt.Fprintln(f, "strict digraph {")
     fmt.Fprintln(f, "    layout=twopi;")
