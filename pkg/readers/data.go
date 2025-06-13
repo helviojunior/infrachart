@@ -166,9 +166,7 @@ func (r *DataReader) GenerateDotFile(dotFilePath string) error {
 
                 if ptr != "" {
                     //No filter out PTR data   
-                    if !tools.SliceHasStr(hostEntry.Hostnames, ptr) {
-                        hostEntry.Hostnames = append(hostEntry.Hostnames, ptr)
-                    }
+                    hostEntry.AddHostname(ptr)
 
                     r.AddSaaS(net.ParseIP(resultItem.IPv4), ptr, &saasSubnetList)
                 }
@@ -177,15 +175,11 @@ func (r *DataReader) GenerateDotFile(dotFilePath string) error {
                     if len(r.options.FilterList) > 0 {
                         for _, f := range r.options.FilterList {
                             if strings.Contains(hostName, f) {
-                                if !tools.SliceHasStr(hostEntry.Hostnames, hostName) {
-                                    hostEntry.Hostnames = append(hostEntry.Hostnames, hostName)
-                                }
+                                hostEntry.AddHostname(hostName)
                             }
                         }
                     }else {
-                        if !tools.SliceHasStr(hostEntry.Hostnames, hostName) {
-                            hostEntry.Hostnames = append(hostEntry.Hostnames, hostName)
-                        }
+                        hostEntry.AddHostname(hostName)
                     }
                 }
 
@@ -243,7 +237,6 @@ func (r *DataReader) GenerateDotFile(dotFilePath string) error {
                             hostEntry.Source = "NMAP"
                         }
 
-                        r.CheckProductsInfo(hostEntry, host.Hostnames)
                     }
 
                     if hostEntry != nil {
@@ -279,9 +272,9 @@ func (r *DataReader) GenerateDotFile(dotFilePath string) error {
 
                             // Check certificates
                             for _, script := range port.Scripts {
-                                ignoreCert := false
                                 if script.Id == "ssl-cert" {
                                     certPem := ""
+                                    isCA := false
                                     newCrt := models.Cert{
                                         ID        : "",
                                         CN        : "", 
@@ -313,7 +306,7 @@ func (r *DataReader) GenerateDotFile(dotFilePath string) error {
                                                 //certPem = strings.ToLower(v)
                                             case "x509v3 basic constraints":
                                                 if strings.Contains(v, "CA:true") {
-                                                    ignoreCert = true
+                                                    isCA = true
                                                 }
                                             }
                                         }
@@ -325,6 +318,7 @@ func (r *DataReader) GenerateDotFile(dotFilePath string) error {
                                         if err == nil {
 
                                             newCrt.SelfSigned = tools.IsSelfSigned(crt)
+                                            isCA = crt.IsCA
 
                                             newCrt.CN = tools.FormatCN(crt.Subject.String())
                                             newCrt.ID = tools.GetHash(crt.Signature)
@@ -357,12 +351,12 @@ func (r *DataReader) GenerateDotFile(dotFilePath string) error {
                                         if len(r.options.FilterList) > 0 {
                                             for _, f := range r.options.FilterList {
                                                 if strings.Contains(alt, f) && alt != newCrt.CN {
-                                                    newCrt.AlternateNames = append(newCrt.AlternateNames, alt)
+                                                    newCrt.AddAlternateNames(alt)
                                                 }
                                             }
                                         }else{
                                             if alt != newCrt.CN {
-                                                newCrt.AlternateNames = append(newCrt.AlternateNames, alt)
+                                                newCrt.AddAlternateNames(alt)
                                             }
                                         }
                                     }
@@ -381,7 +375,7 @@ func (r *DataReader) GenerateDotFile(dotFilePath string) error {
                                             add = true
                                         }
 
-                                        if add && !ignoreCert {
+                                        if add && (!isCA || newCrt.SelfSigned) {
                                             portEntry.Certs = append(portEntry.Certs, newCrt)
                                         }
                                     }
@@ -415,6 +409,7 @@ func (r *DataReader) GenerateDotFile(dotFilePath string) error {
                                 add = true
                             }
                             if add {
+                                r.CheckProductsInfo(hostEntry, host.Hostnames)
                                 hostList = append(hostList, hostEntry)
                             }
                         }
@@ -505,9 +500,7 @@ func (r *DataReader) GenerateDotFile(dotFilePath string) error {
                     r.CheckProductsInfo(hostEntry, host.Ptr)
 
                     //No filter out PTR data   
-                    if !tools.SliceHasStr(hostEntry.Hostnames, host.Ptr) {
-                        hostEntry.Hostnames = append(hostEntry.Hostnames, host.Ptr)
-                    }
+                    hostEntry.AddHostname(host.Ptr)
                 
                     r.AddSaaS(net.ParseIP(host.Ip), host.Ptr, &saasSubnetList)
                 }
@@ -543,12 +536,12 @@ func (r *DataReader) GenerateDotFile(dotFilePath string) error {
                                 if len(r.options.FilterList) > 0 {
                                     for _, f := range r.options.FilterList {
                                         if strings.Contains(alt.Name, f) && alt.Name != newCrt.CN {
-                                            newCrt.AlternateNames = append(newCrt.AlternateNames, alt.Name)
+                                            newCrt.AddAlternateNames(alt.Name)
                                         }
                                     }
                                 }else{
                                     if alt.Name != newCrt.CN {
-                                        newCrt.AlternateNames = append(newCrt.AlternateNames, alt.Name)
+                                        newCrt.AddAlternateNames(alt.Name)
                                     }
                                 }
                             }
@@ -717,7 +710,6 @@ func (r *DataReader) GenerateDotFile(dotFilePath string) error {
 
 }
 
-
 func (r *DataReader) AddSaaS(ip net.IP, name string, saasSubnetList *[]netcalc.SubnetData) bool{
 
     if r.options.FullChart {
@@ -732,7 +724,6 @@ func (r *DataReader) AddSaaS(ip net.IP, name string, saasSubnetList *[]netcalc.S
 
     return false
 }
-
 
 func (r *DataReader) CheckProductsInfo(host *models.HostEntry, keyvals ...interface{}) { 
     for _, v := range keyvals {
@@ -1026,7 +1017,9 @@ func (r *DataReader) GenerateHostPortDotFile(dotFilePath string, topList []*mode
                             }
                             strCert = append(strCert, n)
                             for _, alt := range cert.AlternateNames {
-                                strCert = append(strCert, alt)
+                                if !tools.SliceHasStr(strCert, alt) {
+                                    strCert = append(strCert, alt)
+                                }
                             }
                         }
 

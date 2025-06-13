@@ -5,7 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net"
-
+    "strings"
     "sort"
 
 	"github.com/helviojunior/infrachart/internal/tools"
@@ -24,6 +24,19 @@ type Cert struct {
     CN string
     SelfSigned bool
     AlternateNames []string
+}
+
+func (cert *Cert) AddAlternateNames(altName string) {
+    altName = strings.Trim(strings.ToLower(altName), " ")
+    if altName == cert.CN {
+        return 
+    }
+    for _, h := range cert.AlternateNames {
+        if h ==  altName {
+            return
+        }   
+    }
+    cert.AlternateNames = append(cert.AlternateNames, altName)
 }
 
 func (cert *Cert) String() string {
@@ -71,6 +84,16 @@ type HostEntry struct {
     Hostnames   []string
     Ports       []*PortEntry
     Hide        bool
+}
+
+func (host *HostEntry) AddHostname(hostname string) {
+    hostname = strings.Trim(strings.ToLower(hostname), " ")
+    for _, h := range host.Hostnames {
+        if h ==  hostname {
+            return
+        }   
+    }
+    host.Hostnames = append(host.Hostnames, hostname)
 }
 
 func (host *HostEntry) String() string {
