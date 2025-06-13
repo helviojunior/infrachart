@@ -44,10 +44,12 @@ Convert data to Graphviz dot file.
 A --from-path and --to-file must be specified. The extension used for the
 specified filenames will be used to determine the conversion direction and
 target.`)),
-    Example: ascii.Markdown(`
+    Example: `
 - infrachart report dot --from-path ~/client_data/ --to-file infrachart.dot
-- infrachart report dot --from-path ~/client_data/enumdns.sqlite3 --to-file infrachart.dot
-`),
+- infrachart report dot --from-path ~/client_data/ --to-file infrachart.dot  --type certificates
+- infrachart report dot --from-path ~/client_data/enumdns.sqlite3 --to-file infrachart.dot -F
+- infrachart report dot --from-path ~/client_data/nmap_file.xml --to-file infrachart.dot
+`,
     PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
         var err error
 

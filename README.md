@@ -32,7 +32,9 @@ Usage:
 Examples:
 
 - infrachart report dot --from-path ~/client_data/ --to-file infrachart.dot
-- infrachart report dot --from-path ~/client_data/enumdns.sqlite3 --to-file infrachart.dot
+- infrachart report dot --from-path ~/client_data/ --to-file infrachart.dot  --type certificates
+- infrachart report dot --from-path ~/client_data/enumdns.sqlite3 --to-file infrachart.dot -F
+- infrachart report dot --from-path ~/client_data/nmap_file.xml --to-file infrachart.dot
 
 
 Available Commands:
@@ -115,6 +117,7 @@ To generate the Nmap XML with certificate data use the followin parameters
 
 ```bash
 nmap -Pn -v -T4 -sTV -A -p80,443,8443,3389 10.10.10.10 -oX nmap_1.xml
+infrachart report dot --from-path nmap_1.xml --to-file infrachart.dot
 ```
 
 ## Disclaimer
