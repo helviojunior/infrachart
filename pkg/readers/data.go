@@ -1015,7 +1015,9 @@ func (r *DataReader) GenerateHostPortDotFile(dotFilePath string, topList []*mode
                             if cert.SelfSigned {
                                 n += " (Self Signed)"
                             }
-                            strCert = append(strCert, n)
+                            if !tools.SliceHasStr(strCert, n) {
+                                strCert = append(strCert, n)
+                            }
                             for _, alt := range cert.AlternateNames {
                                 if !tools.SliceHasStr(strCert, alt) {
                                     strCert = append(strCert, alt)

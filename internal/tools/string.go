@@ -60,5 +60,8 @@ func FormatCN(cn string) string {
     }
     txt = strings.Replace(txt, "\"", "", -1)
     txt = strings.Replace(txt, "'", "", -1)
+    txt = strings.Replace(txt, "\r", "", -1)
+    txt = strings.Replace(txt, "\n", "", -1)
+    txt = strings.Trim(txt, " ")
     return txt
 } 

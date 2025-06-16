@@ -27,7 +27,12 @@ type Cert struct {
 }
 
 func (cert *Cert) AddAlternateNames(altName string) {
-    altName = strings.Trim(strings.ToLower(altName), " ")
+    altName = strings.ToLower(altName)
+    altName = strings.Replace(altName, "\"", "", -1)
+    altName = strings.Replace(altName, "'", "", -1)
+    altName = strings.Replace(altName, "\r", "", -1)
+    altName = strings.Replace(altName, "\n", "", -1)
+    altName = strings.Trim(altName, " ")
     if altName == cert.CN {
         return 
     }
