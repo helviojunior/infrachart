@@ -64,6 +64,29 @@ Global Flags:
 
 ## Use-cases
 
+### Recommended usage flow
+
+```mermaid
+  sequenceDiagram
+    Client->>EnumDNS: Install EnumDNS
+    Client->>NMAP: Install NMAP
+    Client->>CertCrawler: Install CertCrawler
+    Client->>InfraChart: Install InfraChart
+    Client->>EnumDNS: Recon and Brute-force
+    EnumDNS->>DNS: Enumerate all domain hosts and IP
+    EnumDNS->>Client: enumdns.sqlite3 File(s) Saved Locally
+    Client->>NMAP: nmap -Pn -v -T4 -sTV -A -oX nmap.xml
+    NMAP->>Targets: Enumerate open ports
+    NMAP->>Client: .xml File(s) Saved Locally
+    Client->>CertCrawler: SSL/TLS certificate crawler
+    Client->>Targets: Verify all host that has SSL/TLS certificate (using output from EnumDNS + Nmap XML files)
+    CertCrawler->>Client: certcrawler.sqlite3 File(s) Saved Locally
+    Client->>InfraChart: Sumarize using output from EnumDNS + Nmap XML files + CertCrawler
+    InfraChart->>Client: Save .dot and .png File(s) Saved Locally
+    
+    
+``` 
+
 ### Image 1 - All host, ports and certificates
 
 **Note:** This command filtered out SaaS services
