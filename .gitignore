@@ -11,6 +11,10 @@
 *.dot
 infrachart
 infrachart.exe
+*.version
+*.verstr
+*.ldflags
+
 # dep vendor/
 vendor/
 
