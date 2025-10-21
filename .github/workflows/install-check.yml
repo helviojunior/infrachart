@@ -48,13 +48,6 @@ jobs:
         run: |
           go install github.com/helviojunior/infrachart@${GITHUB_SHA}
 
-      - name: Create a fake wordlist
-        run: |
-          cat << EOF > /tmp/wl.txt
-          www
-          wiki
-          EOF
-
       - name: Verify Installation
         run: |
           infrachart version
