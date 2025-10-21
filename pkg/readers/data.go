@@ -1124,10 +1124,9 @@ func (r *DataReader) GenerateCertificatesDotFile(dotFilePath string, topList []*
 
                 }
 
-            }
-            
-            ipCount++
+                ipCount++
 
+            }
         }
     }
 
