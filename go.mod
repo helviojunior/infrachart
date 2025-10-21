@@ -14,7 +14,7 @@ require (
 	github.com/lair-framework/go-nmap v0.0.0-20191202052157-3507e0b03523
 	github.com/prometheus/procfs v0.17.0
 	github.com/spf13/cobra v1.10.1
-	golang.org/x/image v0.28.0
+	golang.org/x/image v0.32.0
 	golang.org/x/sys v0.37.0
 	gorm.io/driver/mysql v1.6.0
 	gorm.io/driver/postgres v1.6.0
