@@ -1120,13 +1120,14 @@ func (r *DataReader) GenerateCertificatesDotFile(dotFilePath string, topList []*
                         fmt.Fprintf(f, "    %s -> \"%s\" [label=\"\" color=\"#33a02c\"]\n", subnetName, portNode)
                         fmt.Fprintf(f, "    %s -> \"%s\" [label=\"\" color=\"#999999\"]\n", portNode, ipNode)
 
-                        ipCount++
-
                     }
 
                 }
 
             }
+            
+            ipCount++
+
         }
     }
 
