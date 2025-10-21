@@ -7,7 +7,7 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.1-0.20250404203927-76690c660834
 	github.com/charmbracelet/log v0.4.2
 	github.com/glebarez/sqlite v1.11.0
-	github.com/helviojunior/certcrawler v0.1.17
+	github.com/helviojunior/certcrawler v0.1.18
 	github.com/helviojunior/enumdns v0.1.15
 	github.com/helviojunior/gopathresolver v0.1.6
 	github.com/helviojunior/pcapraptor v0.1.5
