@@ -12,7 +12,7 @@ require (
 	github.com/helviojunior/gopathresolver v0.1.6
 	github.com/helviojunior/pcapraptor v0.1.5
 	github.com/lair-framework/go-nmap v0.0.0-20191202052157-3507e0b03523
-	github.com/prometheus/procfs v0.19.1
+	github.com/prometheus/procfs v0.19.2
 	github.com/spf13/cobra v1.10.1
 	golang.org/x/image v0.32.0
 	golang.org/x/sys v0.37.0
